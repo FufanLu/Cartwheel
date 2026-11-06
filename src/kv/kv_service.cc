@@ -1,14 +1,12 @@
 #include "kv/kv_service.h"
 
-#include "common/logging.h"
-
 #include <algorithm>
-
 #include <chrono>
 #include <string>
 
 #include "common/build_info.h"
 #include "common/clock.h"
+#include "common/logging.h"
 #include "common/metrics.h"
 #include "kv/grpc_status.h"
 

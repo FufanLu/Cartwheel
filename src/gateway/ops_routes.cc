@@ -193,7 +193,8 @@ boost::asio::awaitable<Response> OpsRoutes::Isolate(RequestContext& ctx) {
                                                  : nlohmann::json::parse(ctx.request.body());
     req.set_duration_ms(body.value("duration_ms", int64_t{10'000}));
   } catch (const nlohmann::json::exception& e) {
-    co_return ErrorResponse(Status::InvalidArgument(std::string("bad JSON body: ") + e.what()), ctx);
+    co_return ErrorResponse(Status::InvalidArgument(std::string("bad JSON body: ") + e.what()),
+                            ctx);
   }
   grpc::ClientContext g;
   g.set_deadline(std::chrono::system_clock::now() + timeout_);

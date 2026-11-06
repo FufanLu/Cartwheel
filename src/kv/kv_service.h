@@ -94,8 +94,7 @@ class AdminServiceImpl final : public v1::AdminService::CallbackService {
   grpc::ServerUnaryReactor* SetTableLimits(grpc::CallbackServerContext* ctx,
                                            const v1::TableLimitsRequest* req,
                                            v1::TableLimitsResponse* resp) override;
-  grpc::ServerUnaryReactor* Isolate(grpc::CallbackServerContext* ctx,
-                                    const v1::IsolateRequest* req,
+  grpc::ServerUnaryReactor* Isolate(grpc::CallbackServerContext* ctx, const v1::IsolateRequest* req,
                                     v1::IsolateResponse* resp) override;
 
   // Flipped by the shutdown path so load balancers drain this node first.
