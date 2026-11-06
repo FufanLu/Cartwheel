@@ -4,6 +4,9 @@ import { formatCents } from '../api/cart';
 import { Plate } from './Plates';
 import { PRODUCTS, type Product } from './products';
 import { useCart } from './useCart';
+import { DealSheet } from './DealSheet';
+import { useDeals } from './useDeals';
+import { Mark, SheetNav } from '../shell/Sheet';
 import './storefront.css';
 
 function initialUser(): string {
@@ -24,6 +27,7 @@ export function Storefront() {
   const [user, setUser] = useState(initialUser);
   const [draftUser, setDraftUser] = useState(user);
   const cart = useCart(user);
+  const deals = useDeals(user);
 
   useEffect(() => {
     try {
@@ -64,13 +68,7 @@ export function Storefront() {
     <div className="pad">
       <header className="title-block">
         <div className="tb-cell tb-name">
-          <svg className="mark" viewBox="0 0 32 32" aria-hidden="true">
-            <circle cx="16" cy="16" r="10.5" />
-            <circle cx="16" cy="5.5" r="2" className="mark-node" />
-            <circle cx="25.6" cy="20" r="2" className="mark-node" />
-            <circle cx="7" cy="21" r="2" className="mark-node" />
-            <circle cx="22" cy="8" r="2.6" className="mark-own" />
-          </svg>
+          <Mark />
           <h1 className="tb-title">Cartwheel shop</h1>
         </div>
         <form
@@ -98,10 +96,7 @@ export function Storefront() {
           <span className="tb-label">Date</span>
           <span className="tb-value figure">{today}</span>
         </div>
-        <div className="tb-cell">
-          <span className="tb-label">Sheet</span>
-          <span className="tb-value figure">1 of 1</span>
-        </div>
+        <SheetNav current={1} />
         <div className="tb-cell tb-stamp" title="Catalog and prices are synthetic demo data">
           Demo data
         </div>
@@ -109,9 +104,10 @@ export function Storefront() {
 
       <main className="sheet">
         <section className="entries" aria-labelledby="entries-heading">
+          <DealSheet model={deals} />
           <div className="entries-head">
             <h2 id="entries-heading">Entries</h2>
-            <p className="entries-note">Six items. Prices are demo figures; nothing ships.</p>
+            <p className="entries-note">Six items at list price. Prices are demo figures; nothing ships.</p>
           </div>
           <div className="entry-cols" aria-hidden="true">
             <span>Entry</span>

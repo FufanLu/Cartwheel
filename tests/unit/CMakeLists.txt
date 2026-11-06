@@ -21,7 +21,9 @@ cartwheel_add_test(cluster_test
   LABELS unit)
 
 cartwheel_add_test(kv_test
-  SOURCES kv/local_store_test.cc
+  SOURCES
+    kv/fault_injection_test.cc
+    kv/local_store_test.cc
   LIBS cartwheel::kv
   LABELS unit)
 

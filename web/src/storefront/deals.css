@@ -1,0 +1,305 @@
+/* Deal sheet: the same ruled table as the entries, with a clock and a stock
+   scale. System readings (time, stock) stay graphite; the visitor's own order
+   is pencilled while pending and inked red once Postgres confirms it. */
+
+.deals {
+  border-bottom: var(--line) solid var(--rule-strong);
+}
+
+.deals-push {
+  margin-left: var(--s2);
+  padding: 0 6px;
+  border: var(--hair) solid var(--rule);
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.deals-push[data-state='live'] {
+  border-color: var(--rule-strong);
+  color: var(--ink);
+}
+
+.deals-push[data-state='retrying'] {
+  border-style: dashed;
+}
+
+.deals-auth,
+.deals-empty {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.deals-auth {
+  color: var(--red-ink);
+  border-bottom: var(--hair) dashed var(--red);
+}
+
+.deal-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deal {
+  display: grid;
+  grid-template-columns: 3ch 80px minmax(11rem, 1fr) 6.5rem 8.5rem 11rem;
+  align-items: center;
+  gap: var(--s2);
+  min-height: calc(var(--sq) * 12);
+  padding: var(--s1) var(--s3);
+  border-bottom: var(--hair) solid var(--rule);
+  transition: background-color 180ms var(--ease-out);
+}
+
+.deal:last-child {
+  border-bottom: 0;
+}
+
+.deal:hover {
+  background: var(--paper-hover);
+}
+
+.deal .plate {
+  width: 80px;
+  height: 60px;
+}
+
+.deal .entry-title {
+  font-size: var(--fs-md);
+}
+
+.deal .entry-sku {
+  white-space: nowrap;
+}
+
+.deal[data-phase='ended'] .plate,
+.deal[data-phase='soldout'] .plate {
+  color: var(--ink-3);
+}
+
+.deal-price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 var(--s1);
+  margin: 2px 0 0;
+}
+
+.deal-now {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+
+.deal-was {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  text-decoration-color: var(--ink-3);
+}
+
+.deal-off {
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+}
+
+.deal-clock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.deal-time {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.deal-time-done {
+  color: var(--ink-2);
+  font-size: var(--fs-md);
+  white-space: nowrap;
+}
+
+.deal[data-phase='live'] .deal-clock .tb-label {
+  color: var(--ink);
+}
+
+.deal-stock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stock-scale {
+  width: 100%;
+  height: 12px;
+  overflow: visible;
+}
+
+.ss-base,
+.ss-tick {
+  stroke: var(--rule-strong);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.ss-taken {
+  fill: var(--ink);
+  transform-box: fill-box;
+  transform-origin: left center;
+  transition: transform 400ms var(--ease-out);
+}
+
+.deal-stock-text {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.deal-stock-sub {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.deal .btn-add {
+  white-space: nowrap;
+}
+
+.btn-add:disabled {
+  border-style: dashed;
+  border-color: var(--rule-strong);
+  background: transparent;
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.btn-add:disabled:hover {
+  background: transparent;
+  border-color: var(--rule-strong);
+}
+
+.deal-order {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-height: 1.2em;
+  max-width: 11rem;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  text-align: right;
+}
+
+.deal-order[data-failed] {
+  color: var(--red-ink);
+}
+
+/* Pencil-then-ink: pending is graphite-3 over a dashed pencil line. */
+.deal-order-pending {
+  color: var(--ink-3);
+}
+
+.deal-order-pending > span:first-child {
+  text-decoration: underline dashed var(--pencil);
+  text-underline-offset: 3px;
+}
+
+.deal-order-inked {
+  color: var(--red-ink);
+  font-weight: 700;
+  animation: ink-in 420ms var(--ease-out);
+}
+
+.deal-order-failed {
+  color: var(--red-ink);
+  padding: 2px 4px;
+  border-top: var(--hair) dashed var(--red);
+  border-bottom: var(--hair) dashed var(--red);
+}
+
+@keyframes ink-in {
+  from {
+    color: var(--pencil);
+    filter: blur(0.6px);
+  }
+  to {
+    filter: blur(0);
+  }
+}
+
+@media (max-width: 1080px) {
+  .deal {
+    grid-template-columns: 3ch 80px minmax(0, 1fr) 7rem 11rem;
+    grid-template-areas: 'no plate body clock action' 'no plate stock stock action';
+  }
+  .deal > .entry-no {
+    grid-area: no;
+  }
+  .deal > .plate {
+    grid-area: plate;
+  }
+  .deal > .entry-body {
+    grid-area: body;
+  }
+  .deal-clock {
+    grid-area: clock;
+  }
+  .deal-stock {
+    grid-area: stock;
+  }
+  .deal > .entry-action {
+    grid-area: action;
+  }
+}
+
+@media (max-width: 720px) {
+  .deal {
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'plate body clock'
+      'stock stock stock'
+      'no action action'
+      'order order order';
+    padding: var(--s2);
+    gap: var(--s1) var(--s2);
+  }
+  .deal .plate {
+    width: 64px;
+    height: 48px;
+    align-self: start;
+  }
+  .deal > .entry-no {
+    align-self: center;
+    padding-top: 0;
+  }
+  .deal-time {
+    font-size: var(--fs-md);
+  }
+  .deal > .entry-action {
+    display: contents;
+  }
+  .deal .btn-add {
+    grid-area: action;
+    justify-self: end;
+  }
+  .deal .deal-order {
+    grid-area: order;
+    max-width: none;
+    align-items: flex-start;
+    text-align: left;
+  }
+  .deal .btn-add span {
+    display: inline;
+  }
+  .deal .btn-add {
+    width: auto;
+    padding: 0 var(--s2);
+  }
+  .deals-push {
+    display: inline-block;
+    margin: 4px 0 0;
+  }
+}

@@ -118,6 +118,29 @@
 }
 
 
+.tb-sheets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s2);
+  font-size: var(--fs-sm);
+}
+
+.tb-sheets a {
+  color: var(--ink);
+  text-decoration: underline var(--red-line);
+  text-underline-offset: 3px;
+}
+
+.tb-sheets a:hover {
+  color: var(--red-ink);
+}
+
+.tb-sheets a[aria-current='page'] {
+  font-weight: 700;
+  text-decoration: none;
+  cursor: default;
+}
+
 /* ---- sheet layout ------------------------------------------------------ */
 
 .sheet {

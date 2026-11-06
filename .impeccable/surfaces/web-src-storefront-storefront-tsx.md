@@ -7,7 +7,7 @@ related_targets: []
 
 # Storefront (web/src/storefront)
 
-Scope: M1 storefront cart page. M5 extends the same world to deals and the ops console.
+Scope: M1 storefront cart page. M5 (built) extends the same world to the deal sheet (web/src/storefront/DealSheet.tsx) and the ops console (web/src/ops/), reviewed once by the finish reviewer and fixed; components recorded in DESIGN.md.
 Mode: Operate. The visitor browses ~6 demo products, adds to and removes from the cart, and watches concurrent edits merge.
 Audience: distributed-systems interviewers and engineers on a laptop, plus the author demoing live. The task stays obvious, and the mechanism stays visible.
 Run: unattended by user instruction ("快写吧 别和我说了"). The assigned direction was built without a decision round. Code-led (no image generation).

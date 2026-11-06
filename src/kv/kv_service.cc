@@ -1,5 +1,9 @@
 #include "kv/kv_service.h"
 
+#include "common/logging.h"
+
+#include <algorithm>
+
 #include <chrono>
 #include <string>
 
@@ -210,8 +214,32 @@ grpc::ServerUnaryReactor* KvServiceImpl::Delete(grpc::CallbackServerContext* ctx
   return reactor;
 }
 
-AdminServiceImpl::AdminServiceImpl(const LocalStore* store, ClusterNode* cluster)
-    : store_(store), cluster_(cluster), started_ms_(SystemClock::Default()->WallMillis()) {}
+AdminServiceImpl::AdminServiceImpl(const LocalStore* store, ClusterNode* cluster,
+                                   FaultSwitch* fault)
+    : store_(store),
+      cluster_(cluster),
+      fault_(fault),
+      started_ms_(SystemClock::Default()->WallMillis()),
+      window_reads_(store->ReadLatency()),
+      window_writes_(store->WriteLatency()) {}
+
+grpc::ServerUnaryReactor* AdminServiceImpl::Isolate(grpc::CallbackServerContext* ctx,
+                                                    const v1::IsolateRequest* req,
+                                                    v1::IsolateResponse* resp) {
+  auto* reactor = ctx->DefaultReactor();
+  if (fault_ == nullptr) {
+    reactor->Finish(ToGrpc(Status::FailedPrecondition(
+        "fault injection is disabled (set debug.fault_injection = true)")));
+    return reactor;
+  }
+  const int64_t ms = std::clamp<int64_t>(req->duration_ms(), 0, 120'000);
+  fault_->IsolateFor(ms);
+  CW_LOG_WARN("fault injection: isolated from peers for {} ms", ms);
+  resp->set_node_id(store_->node_id());
+  resp->set_isolated_ms(ms);
+  reactor->Finish(grpc::Status::OK);
+  return reactor;
+}
 
 grpc::ServerUnaryReactor* AdminServiceImpl::ClusterInfo(grpc::CallbackServerContext* ctx,
                                                         const v1::ClusterInfoRequest* /*req*/,
@@ -330,6 +358,28 @@ grpc::ServerUnaryReactor* AdminServiceImpl::NodeStats(grpc::CallbackServerContex
   resp->set_get_p99_us(static_cast<double>(reads.Percentile(99)) / 1e3);
   resp->set_put_p50_us(static_cast<double>(writes.Percentile(50)) / 1e3);
   resp->set_put_p99_us(static_cast<double>(writes.Percentile(99)) / 1e3);
+  {
+    // Close a window once at least a second has passed; between closes,
+    // every caller sees the last closed window.
+    std::lock_guard lock(window_mu_);
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - window_start_).count();
+    if (elapsed >= 1000) {
+      const auto r = reads.Minus(window_reads_);
+      const auto w = writes.Minus(window_writes_);
+      last_window_get_p99_us_ = static_cast<double>(r.Percentile(99)) / 1e3;
+      last_window_put_p99_us_ = static_cast<double>(w.Percentile(99)) / 1e3;
+      last_window_ms_ = elapsed;
+      window_reads_ = reads;
+      window_writes_ = writes;
+      window_start_ = now;
+    }
+    resp->set_window_get_p99_us(last_window_get_p99_us_);
+    resp->set_window_put_p99_us(last_window_put_p99_us_);
+    resp->set_window_ms(last_window_ms_);
+  }
+  resp->set_isolated_ms(fault_ != nullptr ? fault_->RemainingMs() : 0);
   auto* reactor = ctx->DefaultReactor();
   reactor->Finish(grpc::Status::OK);
   return reactor;

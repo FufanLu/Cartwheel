@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <thread>
@@ -69,7 +70,18 @@ class KafkaOrderSource final : public OrderSource {
 
  private:
   KafkaOrderSource() = default;
+  Status Connect();
+  // True while the consumer holds at least one partition.
+  bool HasAssignment();
+
+  KafkaOptions options_;
+  std::string group_id_;
   std::unique_ptr<RdKafka::KafkaConsumer> consumer_;
+  // Watchdog: a consumer that has held no partition this long is recreated.
+  // Observed after a laptop sleep: the group evicted both workers on heartbeat
+  // expiry and the librdkafka consumers kept polling without ever rejoining.
+  std::chrono::steady_clock::time_point last_assigned_ = std::chrono::steady_clock::now();
+  std::chrono::steady_clock::time_point last_check_ = std::chrono::steady_clock::now();
 };
 
 }  // namespace cartwheel::deal

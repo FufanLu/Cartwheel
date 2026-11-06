@@ -21,6 +21,7 @@ start_node() {
   CARTWHEEL_CLUSTER_ENABLED=true \
   CARTWHEEL_CLUSTER_SEEDS="$SEEDS" \
   CARTWHEEL_SERVER_DRAIN_GRACE_MS=200 \
+  CARTWHEEL_DEBUG_FAULT_INJECTION=${CARTWHEEL_FAULT_INJECTION:-true} \
     "$BUILD/src/kv/wheel-node" >>"$DATA/logs/wheel-$i.log" 2>&1 &
   echo $! >"$DATA/wheel-$i.pid"
 }

@@ -162,13 +162,23 @@ void KafkaOrderLog::Publish(const v1::OrderPlaced& event, Done done) {
 Result<std::unique_ptr<KafkaOrderSource>> KafkaOrderSource::Create(const KafkaOptions& options,
                                                                    const std::string& group_id) {
   std::unique_ptr<KafkaOrderSource> src(new KafkaOrderSource());
+  src->options_ = options;
+  src->group_id_ = group_id;
+  CW_RETURN_IF_ERROR(src->Connect());
+  return src;
+}
+
+Status KafkaOrderSource::Connect() {
   std::unique_ptr<RdKafka::Conf> conf(RdKafka::Conf::create(RdKafka::Conf::CONF_GLOBAL));
-  CW_RETURN_IF_ERROR(SetAll(conf.get(), {{"bootstrap.servers", options.brokers},
-                                         {"group.id", group_id},
+  CW_RETURN_IF_ERROR(SetAll(conf.get(), {{"bootstrap.servers", options_.brokers},
+                                         {"group.id", group_id_},
                                          {"client.id", "order-worker"},
                                          {"enable.auto.commit", "false"},
                                          {"auto.offset.reset", "earliest"},
-                                         {"partition.assignment.strategy", "cooperative-sticky"},
+                                         // Eager (stop-the-world) rebalancing: with a
+                                         // dozen partitions it costs milliseconds and
+                                         // has fewer states to get stuck in.
+                                         {"partition.assignment.strategy", "roundrobin"},
                                          // A crashed worker's partitions move after
                                          // 10 s instead of the 45 s default.
                                          {"session.timeout.ms", "10000"},
@@ -176,12 +186,21 @@ Result<std::unique_ptr<KafkaOrderSource>> KafkaOrderSource::Create(const KafkaOp
                                          {"socket.nagle.disable", "true"},
                                          {"enable.partition.eof", "false"}}));
   std::string err;
-  src->consumer_.reset(RdKafka::KafkaConsumer::create(conf.get(), err));
-  if (!src->consumer_) return Status::Unavailable("kafka consumer: " + err);
-  if (auto e = src->consumer_->subscribe({options.topic}); e != RdKafka::ERR_NO_ERROR) {
+  consumer_.reset(RdKafka::KafkaConsumer::create(conf.get(), err));
+  if (!consumer_) return Status::Unavailable("kafka consumer: " + err);
+  if (auto e = consumer_->subscribe({options_.topic}); e != RdKafka::ERR_NO_ERROR) {
     return Status::Unavailable("kafka subscribe: " + RdKafka::err2str(e));
   }
-  return src;
+  last_assigned_ = std::chrono::steady_clock::now();
+  return Status::Ok();
+}
+
+bool KafkaOrderSource::HasAssignment() {
+  std::vector<RdKafka::TopicPartition*> parts;
+  if (consumer_->assignment(parts) != RdKafka::ERR_NO_ERROR) return false;
+  const bool any = !parts.empty();
+  RdKafka::TopicPartition::destroy(parts);
+  return any;
 }
 
 KafkaOrderSource::~KafkaOrderSource() {
@@ -198,6 +217,19 @@ KafkaOrderSource::~KafkaOrderSource() {
 }
 
 std::vector<v1::OrderPlaced> KafkaOrderSource::Poll(size_t max, int64_t wait_ms) {
+  const auto now = std::chrono::steady_clock::now();
+  if (now - last_check_ > std::chrono::seconds(5)) {
+    last_check_ = now;
+    if (HasAssignment()) {
+      last_assigned_ = now;
+    } else if (now - last_assigned_ > std::chrono::seconds(30)) {
+      // Nothing is lost: offsets are committed only after Postgres, so the
+      // new member resumes from the last commit.
+      CW_LOG_WARN("kafka consumer held no partition for 30 s; recreating it");
+      consumer_->close();
+      if (auto s = Connect(); !s.ok()) CW_LOG_ERROR("{}", s.ToString());
+    }
+  }
   std::vector<v1::OrderPlaced> out;
   int timeout = static_cast<int>(wait_ms);
   while (out.size() < max) {

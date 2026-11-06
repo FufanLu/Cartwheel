@@ -23,6 +23,10 @@ both models live in the same system:
 
 *The storefront after another writer changed the cart: the bracketed line came from the other window, nothing was overwritten. Real capture against the running stack.*
 
+![Ops console: wheel-4 isolated by the visitor, seen as DEAD by its peers, which now hold hints for it](docs/images/ops-console-desktop.webp)
+
+*The ops console during a fault: the visitor isolated wheel-4 (red), its peers declared it DEAD within 3 s and started holding hints, while wheel-bench keeps the other four nodes busy. Real capture.*
+
 ## Architecture
 
 ```mermaid
@@ -50,7 +54,7 @@ flowchart LR
 | M2 | LSM storage engine: WAL, group commit, skiplist memtable, SSTables + bloom, leveled compaction; SIGKILL/power-loss/fuzz tested; 62–92% of RocksDB | ✅ |
 | M3 | Distribution: consistent hashing (64 vnodes), heartbeat gossip, N/R/W sloppy quorum, DVV siblings, hinted handoff, read repair, Merkle anti-entropy, per-table throttling; deterministic simulator with crashes/partitions; a node kill under load costs only its ~3.5 s detection window | ✅ |
 | M4 | Lightning deals: atomic Redis Lua gate → idempotent Kafka/Redpanda log → batched Postgres commits with constraints of last resort; holds never released (redrive + sweeper); JWT, per-user GCRA, WebSocket push. 10k buyers / 1k units: sold out in 0.28 s, committed in 0.73 s, no oversell through worker kills and broker freezes | ✅ |
-| M5 | Storefront and ops console (hash ring, live QPS/p99, fault injection) | |
+| M5 | Deal sheet (server-clock countdowns, live stock, claim, WebSocket-confirmed orders) and an ops console: per-node ring tracks, live ops/s and windowed p99, hints and repairs, one-click node isolation (a simulated partition), deal reset | ✅ |
 | M6 | Observability (Prometheus, Grafana, OpenTelemetry), k6 load tests, chaos experiments | |
 | M7 | Helm/kind deployment, PRFAQ, runbooks | |
 
@@ -107,6 +111,10 @@ build/release/src/tools/deal-rush --gateway 127.0.0.1:8080 --users 10000 --quant
   --pg-url "$CARTWHEEL_POSTGRES_URL"                       # spike + invariant check
 ctest --preset dev -L infra                                # integration tests against the real services
 ```
+
+The ops console is at `/ops` (sheet 2 of the pad). Nodes accept isolation only with
+`debug.fault_injection = true` (on in `local_cluster.sh` and docker-compose); the gateway needs
+`ops.kv_nodes` and `auth.admin_token`.
 
 In the storefront, **Race two writers** fires two adds at the same instant: the store keeps two DVV
 siblings, and the cart shows "Merged 2 concurrent versions" with both items kept.

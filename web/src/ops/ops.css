@@ -1,0 +1,578 @@
+/* Ops console: sheet 2 of the same pad. Every reading is graphite; only the
+   visitor's own fault injection and resets are red pencil. */
+
+.ops-subhead {
+  border-top: var(--line) solid var(--rule-strong);
+}
+
+.ops-empty {
+  margin: 0;
+  padding: var(--s3);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- ring --------------------------------------------------------------- */
+
+.ring-wrap {
+  display: grid;
+  grid-template-columns: minmax(260px, 400px) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3);
+}
+
+.ring {
+  width: 100%;
+  height: auto;
+}
+
+.ring-tick {
+  stroke: var(--rule-strong);
+  stroke-width: 1;
+}
+
+.ring-scale,
+.ring-label,
+.ring-center-sub {
+  font-family: var(--font-figure);
+  font-size: 10px;
+  fill: var(--ink-3);
+}
+
+.ring-label {
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.ring-center {
+  font-family: var(--font-letter);
+  font-size: 15px;
+  font-weight: 700;
+  fill: var(--ink);
+}
+
+.ring-guide {
+  fill: none;
+  stroke: var(--rule);
+  stroke-width: 0.8;
+}
+
+.ring-arc {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 6;
+  stroke-linecap: butt;
+  transition:
+    stroke 240ms var(--ease-out),
+    opacity 180ms var(--ease-out);
+}
+
+.ring-track[data-state='SUSPECT'] .ring-arc {
+  stroke: var(--ink-3);
+}
+
+.ring-track[data-state='SUSPECT'] .ring-guide {
+  stroke: var(--ink-3);
+  stroke-dasharray: 4 3;
+}
+
+.ring-track[data-state='DEAD'] .ring-arc,
+.ring-track[data-state='UNREACHABLE'] .ring-arc {
+  stroke: var(--paper-edge);
+}
+
+.ring-track[data-state='DEAD'] .ring-guide,
+.ring-track[data-state='UNREACHABLE'] .ring-guide {
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.ring-track[data-own] .ring-guide {
+  stroke: var(--red);
+  stroke-width: 1.5;
+}
+
+.ring-track[data-own] .ring-label {
+  fill: var(--red-ink);
+}
+
+.ring-track[data-dim] .ring-arc {
+  opacity: 0.25;
+}
+
+.ring-notes {
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.ring-notes p {
+  max-width: 48ch;
+  margin: 0 0 var(--s2);
+}
+
+.ring-key {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.ring-key > div {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+}
+
+.ring-key dt,
+.ring-key dd {
+  margin: 0;
+}
+
+.rk {
+  display: block;
+  width: 28px;
+  height: 6px;
+  background: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+
+.rk-suspect {
+  background: var(--ink-3);
+  border-bottom: 1px dashed var(--ink-3);
+}
+
+.rk-dead {
+  background: var(--paper-edge);
+  border-bottom: 1px dashed var(--ink-2);
+}
+
+.rk-own {
+  background: transparent;
+  border-bottom: 1.5px solid var(--red);
+}
+
+/* ---- node table ------------------------------------------------------------ */
+
+.node-table-wrap {
+  overflow-x: auto;
+}
+
+.node-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.node-table th {
+  padding: 6px 6px;
+  border-bottom: var(--hair) solid var(--rule-strong);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.node-table th:first-child,
+.node-table td:first-child {
+  padding-left: var(--s3);
+}
+
+.node-table td {
+  height: calc(var(--sq) * 7);
+  padding: 4px 6px;
+  border-bottom: var(--hair) solid var(--rule);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.node-table tr {
+  transition: background-color 180ms var(--ease-out);
+}
+
+.node-table tbody tr:hover,
+.node-table tbody tr[data-hl] {
+  background: var(--paper-hover);
+}
+
+.node-table .nt-r {
+  text-align: right;
+}
+
+.nt-no {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.nt-node {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  font-weight: 700;
+}
+
+.nt-node line,
+.rc-legend line {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+
+.nt-addr {
+  display: block;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.nt-state {
+  font-size: var(--fs-xs);
+}
+
+tr[data-state='SUSPECT'] .nt-state {
+  color: var(--ink-2);
+  text-decoration: underline dashed var(--pencil);
+  text-underline-offset: 3px;
+}
+
+tr[data-state='DEAD'] .nt-state,
+tr[data-state='NO ANSWER'] .nt-state {
+  font-weight: 700;
+}
+
+.nt-own {
+  display: block;
+  color: var(--red-ink);
+  font-weight: 700;
+}
+
+.node-table td[data-hot] {
+  font-weight: 700;
+}
+
+.nt-figs-mobile {
+  display: none;
+}
+
+.node-table .nt-act {
+  text-align: right;
+  padding-right: var(--s2);
+}
+
+/* ---- rate chart -------------------------------------------------------------- */
+
+.rate-chart {
+  position: relative;
+  margin: 0;
+  padding: var(--s2) var(--s3) var(--s3);
+}
+
+.rc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--s3);
+  margin: 0 0 var(--s1);
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-xs);
+}
+
+.rc-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rc-grid {
+  stroke: var(--rule);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+
+.rc-plot {
+  position: relative;
+  padding-left: 3.5rem;
+  padding-bottom: 1.25rem;
+}
+
+.rc-plot > svg {
+  display: block;
+  width: 100%;
+  height: 200px;
+}
+
+.rc-y,
+.rc-x {
+  position: absolute;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums lining-nums;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.rc-y {
+  left: 0;
+  width: 3rem;
+  text-align: right;
+  transform: translateY(-50%);
+}
+
+.rc-x {
+  bottom: 0;
+  transform: translateX(-50%);
+}
+
+.rc-x:last-child {
+  transform: translateX(-100%);
+}
+
+.rc-x-start {
+  transform: none;
+}
+
+.rc-line[data-dim] {
+  opacity: 0.25;
+}
+
+.rc-line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.6;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+
+.rc-cross {
+  stroke: var(--ink-2);
+  stroke-width: 0.8;
+  vector-effect: non-scaling-stroke;
+}
+
+.rc-tip {
+  position: absolute;
+  top: var(--s6);
+  transform: translateX(8px);
+  min-width: 11rem;
+  padding: 6px var(--s1);
+  border: var(--hair) solid var(--rule-strong);
+  background: var(--paper);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.rc-tip p {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s2);
+  margin: 0;
+}
+
+.rc-tip p:first-child {
+  color: var(--ink-3);
+}
+
+.rc-caption {
+  max-width: 72ch;
+  margin-top: var(--s1);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+}
+
+/* ---- events -------------------------------------------------------------------- */
+
+.event-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.event-log li {
+  display: grid;
+  grid-template-columns: 4ch 8ch minmax(0, 1fr);
+  gap: var(--s1);
+  padding: 6px var(--s2) 6px var(--s3);
+  border-bottom: var(--hair) dashed var(--rule);
+  font-size: var(--fs-sm);
+}
+
+.ev-no,
+.ev-time {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  padding-top: 2px;
+}
+
+.event-log li[data-own] .ev-text {
+  color: var(--ink);
+  animation: own-text-settle 2.4s var(--ease-out);
+}
+
+.event-log li:first-child[data-own] {
+  animation: own-settle 2.4s var(--ease-out);
+}
+
+@keyframes own-settle {
+  0%,
+  70% {
+    background: var(--red-wash);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+@keyframes own-text-settle {
+  0%,
+  70% {
+    color: var(--red-ink);
+  }
+  100% {
+    color: var(--ink);
+  }
+}
+
+/* ---- deal pipeline --------------------------------------------------------------- */
+
+.pipeline {
+  border-top: var(--line) solid var(--rule-strong);
+}
+
+.pipe-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pipe {
+  display: grid;
+  grid-template-columns: 3ch minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s1);
+  padding: var(--s1) var(--s2) var(--s1) var(--s3);
+  border-bottom: var(--hair) dashed var(--rule);
+}
+
+.pipe-no {
+  padding-top: 2px;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.pipe-title {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+}
+
+.pipe-gen {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+.pipe-figs {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: start;
+  gap: 0 var(--s3);
+  margin: 4px 0 0;
+}
+
+.pipe-figs dt {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.pipe-figs dd {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+
+.pipe-figs dd[data-hot] {
+  font-weight: 700;
+}
+
+.try-notes code {
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1080px) {
+  .ring-wrap {
+    grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .node-table-wrap {
+    overflow: visible;
+  }
+  .node-table thead {
+    display: none;
+  }
+  .node-table,
+  .node-table tbody {
+    display: block;
+  }
+  .node-table tr {
+    display: grid;
+    grid-template-columns: 3ch minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'no node state act'
+      'no figs figs figs';
+    align-items: center;
+    gap: 2px var(--s1);
+    padding: var(--s1) var(--s2);
+    border-bottom: var(--hair) solid var(--rule);
+  }
+  .node-table td {
+    display: block;
+    height: auto;
+    padding: 0 !important;
+    border: 0;
+  }
+  .node-table td.nt-no { grid-area: no; }
+  .node-table td.nt-id { grid-area: node; }
+  .node-table td.nt-state { grid-area: state; }
+  .node-table td.nt-act { grid-area: act; }
+  .node-table td.nt-fig {
+    display: none;
+  }
+  .node-table td.nt-figs-mobile {
+    display: block;
+    white-space: normal;
+    grid-area: figs;
+    color: var(--ink-2);
+    font-size: var(--fs-xs);
+  }
+  .ring-wrap {
+    grid-template-columns: 1fr;
+    padding: var(--s2);
+  }
+  .ring {
+    max-width: 320px;
+    margin: 0 auto;
+  }
+  .node-table th:first-child,
+  .node-table td:first-child {
+    padding-left: var(--s2);
+  }
+  .rate-chart {
+    padding: var(--s2);
+  }
+}

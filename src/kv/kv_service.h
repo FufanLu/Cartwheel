@@ -3,14 +3,17 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
 
 #include <prometheus/counter.h>
 #include <prometheus/histogram.h>
 #include <prometheus/registry.h>
 
 #include "cartwheel/kv/v1/kv.grpc.pb.h"
+#include "common/histogram.h"
 #include "common/status.h"
 #include "kv/cluster_node.h"
+#include "kv/fault_injection.h"
 #include "kv/local_store.h"
 
 namespace cartwheel::kv {
@@ -72,7 +75,9 @@ class KvServiceImpl final : public v1::KvService::CallbackService {
 // Health, stats, and (debug builds) fault injection.
 class AdminServiceImpl final : public v1::AdminService::CallbackService {
  public:
-  explicit AdminServiceImpl(const LocalStore* store, ClusterNode* cluster = nullptr);
+  // `fault` is null unless fault injection is enabled.
+  explicit AdminServiceImpl(const LocalStore* store, ClusterNode* cluster = nullptr,
+                            FaultSwitch* fault = nullptr);
 
   grpc::ServerUnaryReactor* Health(grpc::CallbackServerContext* ctx, const v1::HealthRequest* req,
                                    v1::HealthResponse* resp) override;
@@ -89,6 +94,9 @@ class AdminServiceImpl final : public v1::AdminService::CallbackService {
   grpc::ServerUnaryReactor* SetTableLimits(grpc::CallbackServerContext* ctx,
                                            const v1::TableLimitsRequest* req,
                                            v1::TableLimitsResponse* resp) override;
+  grpc::ServerUnaryReactor* Isolate(grpc::CallbackServerContext* ctx,
+                                    const v1::IsolateRequest* req,
+                                    v1::IsolateResponse* resp) override;
 
   // Flipped by the shutdown path so load balancers drain this node first.
   void SetDraining() noexcept { draining_.store(true, std::memory_order_relaxed); }
@@ -96,8 +104,18 @@ class AdminServiceImpl final : public v1::AdminService::CallbackService {
  private:
   const LocalStore* store_;
   ClusterNode* cluster_;
+  FaultSwitch* fault_;
   const int64_t started_ms_;
   std::atomic<bool> draining_{false};
+
+  // Windowed percentiles for NodeStats.
+  std::mutex window_mu_;
+  HistogramSnapshot window_reads_;
+  HistogramSnapshot window_writes_;
+  std::chrono::steady_clock::time_point window_start_ = std::chrono::steady_clock::now();
+  double last_window_get_p99_us_ = 0;
+  double last_window_put_p99_us_ = 0;
+  int64_t last_window_ms_ = 0;
 };
 
 }  // namespace cartwheel::kv

@@ -7,6 +7,7 @@ add_library(cartwheel_gateway
   io_pool.cc
   jwt.cc
   keyed_limiter.cc
+  ops_routes.cc
   ws_hub.cc)
 add_library(cartwheel::gateway ALIAS cartwheel_gateway)
 cartwheel_target_defaults(cartwheel_gateway)
@@ -16,6 +17,7 @@ target_link_libraries(cartwheel_gateway
     cartwheel::kv
     cartwheel_cart_proto
     cartwheel_deal_proto
+    cartwheel_kv_proto
     OpenSSL::Crypto
     redis++::redis++_static
     Boost::asio

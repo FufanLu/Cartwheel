@@ -240,6 +240,24 @@ A two-column mono strip between 1.5px Strong Rule borders, with hairline cell di
 ### Request Error
 An inline band in the margin with dashed Red Pencil hairlines above and below and Red Ink text. It gives the status and code in bold, then the message, then a quiet "Read again" button.
 
+### Sheet Navigation
+The title block's sheet cell doubles as navigation between the two sheets of the pad ("Sheet 1 of 2": 1 Shop, 2 Ops console). Other sheets are links in Graphite Ink with a Red Line underline (3px offset). The current sheet is bold, with no underline.
+
+### Deal Row
+A numbered (D1, D2…) entry row with a smaller plate (80 x 60), the deal price in headline weight, the list price struck through in Graphite Third, and a clock cell. The clock cell holds a Label ("Opens in" / "Closes in" / "Sold out" / "Ended") over a Headline-size countdown that follows the server clock. The stock cell is a ruled scale (a tick every tenth) inked up to the units taken, over "n of N left" and a two-line mono "gate n taken / db n committed". The claim button names the current state when it is disabled ("Claimed", "Opens 1:28", "Sold out", "Ended") and turns dashed. The visitor's order line follows Pencil-then-Ink: "pencilled · in the log" in Graphite Third over a dashed Pencil underline, then "yours · confirmed" in bold Red Ink when the WebSocket push confirms it.
+
+### Ring (ops)
+The consistent-hash ring is drawn as concentric tracks, one per node, so identity is radius, never colour. Every arc is 6px. State sets the arc ink (alive Graphite Ink, suspect Graphite Third, dead Paper Edge) and the pattern of the track's continuous guide circle (suspect dashed Graphite Third, dead dotted Graphite Second), because dashes cannot read on arcs a few px long. A node the visitor isolated keeps its system state and adds a 1.5px Red Pencil guide and a Red Ink label.
+
+### Node Table (ops)
+A numbered (N1…) ruled table: node with its series dash sample, address in mono, state, ownership, ops/s, windowed p99s, keys, hints held (bold when non-zero), repairs, and a quiet "Isolate" button. Visitor isolation is a red sub-line under the graphite state ("isolated · 0:06"), never a replacement for it. At 720px or narrower the head hides and each row becomes two lines: node, state and action, then a mono figures strip.
+
+### Rate Chart (ops)
+Graphite lines, one per node, told apart by dash pattern (solid, 7-3, 2-3, 10-3-2-3, 4-2-1-2) and named in a legend row. There are no end labels, because five near-equal series collide. Axis figures are HTML in B612 with tabular figures, outside the SVG, so they stay readable at any width. Hover draws a hairline crosshair and a ruled tooltip with every node's value. Hovering a node in the ring or table dims the other series to 25%.
+
+### Event Log (ops)
+A numbered (#n) mono-timed list of observed transitions in graphite. The visitor's own actions (isolate, reset) pencil in on Red Wash with Red Ink text, and settle to graphite over 2.4s.
+
 ## Do's and Don'ts
 
 ### Do:

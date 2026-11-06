@@ -22,6 +22,7 @@
 #include "gateway/cart_routes.h"
 #include "gateway/deal_routes.h"
 #include "gateway/http_server.h"
+#include "gateway/ops_routes.h"
 #include "gateway/ws_hub.h"
 
 namespace {
@@ -82,6 +83,10 @@ int main(int argc, char** argv) {
        .admin_token = cfg.GetString("auth.admin_token", "")},
       *registry);
 
+  // ops.kv_nodes = ["wheel-1=127.0.0.1:7101", ...]: the ops console's view.
+  OpsRoutes ops_routes(OpsRoutes::FromSpecs(cfg.GetStringList("ops.kv_nodes")),
+                       cfg.GetString("auth.admin_token", ""));
+
   WsHub hub(*registry);
   std::unique_ptr<OrderFeed> feed;
   if (const std::string redis = cfg.GetString("notify.redis_url", ""); !redis.empty()) {
@@ -94,6 +99,7 @@ int main(int argc, char** argv) {
   Router router;
   cart_routes.Register(&router);
   deal_routes.Register(&router);
+  ops_routes.Register(&router);
   router.Add(
       http::verb::get, "/healthz", [](RequestContext& c) -> boost::asio::awaitable<Response> {
         co_return JsonResponse(http::status::ok,

@@ -105,6 +105,14 @@ int main(int argc, char** argv) {
   std::unique_ptr<kv::GrpcPeerTransport> transport;
   std::unique_ptr<kv::ClusterNode> cluster_node;
   std::unique_ptr<kv::PeerServiceImpl> peer_service;
+  // debug.fault_injection: lets the ops console partition this node.
+  std::unique_ptr<kv::FaultSwitch> fault;
+  std::unique_ptr<kv::IsolatingTransport> isolating_transport;
+  std::unique_ptr<kv::IsolatingHandler> isolating_handler;
+  if (cfg.GetBool("debug.fault_injection", false)) {
+    fault = std::make_unique<kv::FaultSwitch>(SystemClock::Default());
+    CW_LOG_WARN("fault injection enabled: the admin API can isolate this node");
+  }
   if (clustered) {
     kv::ClusterOptions copts;
     copts.n = static_cast<size_t>(cfg.GetInt("cluster.n", 3));
@@ -121,7 +129,13 @@ int main(int argc, char** argv) {
     // Wall-clock millis: strictly larger after every restart, so peers
     // accept our reset heartbeat counter.
     const auto incarnation = static_cast<uint64_t>(SystemClock::Default()->WallMillis());
-    cluster::Runtime rt{transport.get(), scheduler.get(), SystemClock::Default(),
+    cluster::Transport* peer_transport = transport.get();
+    if (fault) {
+      isolating_transport =
+          std::make_unique<kv::IsolatingTransport>(transport.get(), scheduler.get(), fault.get());
+      peer_transport = isolating_transport.get();
+    }
+    cluster::Runtime rt{peer_transport, scheduler.get(), SystemClock::Default(),
                         static_cast<uint64_t>(SystemClock::Default()->NowNanos())};
     cluster_node = std::make_unique<kv::ClusterNode>(
         node_id, cfg.GetString("node.advertise", listen), incarnation, &store, rt, copts);
@@ -133,11 +147,16 @@ int main(int argc, char** argv) {
       }
       cluster_node->AddSeed(seed.substr(0, eq), seed.substr(eq + 1));
     }
-    peer_service = std::make_unique<kv::PeerServiceImpl>(cluster_node.get());
+    cluster::RequestHandler* handler = cluster_node.get();
+    if (fault) {
+      isolating_handler = std::make_unique<kv::IsolatingHandler>(cluster_node.get(), fault.get());
+      handler = isolating_handler.get();
+    }
+    peer_service = std::make_unique<kv::PeerServiceImpl>(handler);
   }
 
   kv::KvServiceImpl kv_service(&store, *registry, cluster_node.get());
-  kv::AdminServiceImpl admin_service(&store, cluster_node.get());
+  kv::AdminServiceImpl admin_service(&store, cluster_node.get(), fault.get());
 
   grpc::EnableDefaultHealthCheckService(true);
 #if defined(CARTWHEEL_HAVE_GRPC_REFLECTION)

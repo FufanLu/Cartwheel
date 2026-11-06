@@ -14,6 +14,8 @@ x-cluster: &cluster
   CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7100
   CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9100
   CARTWHEEL_STORAGE_ENGINE: lsm
+  # Demo stack: the ops console may isolate a node. Never enable in production.
+  CARTWHEEL_DEBUG_FAULT_INJECTION: "true"
 
 x-service: &service
   image: cartwheel:dev
@@ -206,6 +208,7 @@ services:
       CARTWHEEL_CART_TARGET: cart-svc:7200
       CARTWHEEL_DEAL_TARGET: deal-svc:7300
       CARTWHEEL_NOTIFY_REDIS_URL: redis://redis:6379
+      CARTWHEEL_OPS_KV_NODES: wheel-1=wheel-1:7100,wheel-2=wheel-2:7100,wheel-3=wheel-3:7100,wheel-4=wheel-4:7100,wheel-5=wheel-5:7100
       # Demo values; set real secrets through the environment.
       CARTWHEEL_AUTH_JWT_SECRET: ${CARTWHEEL_JWT_SECRET:-compose-dev-secret}
       CARTWHEEL_AUTH_ADMIN_TOKEN: ${CARTWHEEL_ADMIN_TOKEN:-dev-admin}

@@ -113,6 +113,14 @@ message NodeStatsResponse {
   double get_p99_us = 7;
   double put_p50_us = 8;
   double put_p99_us = 9;
+  // The same percentiles over the last window (the time since the previous
+  // NodeStats call that closed a window, at least 1 s), so a dashboard
+  // polling once a second sees live latency, not a lifetime average.
+  double window_get_p99_us = 10;
+  double window_put_p99_us = 11;
+  int64 window_ms = 12;
+  // Remaining isolation from fault injection, 0 when connected.
+  int64 isolated_ms = 13;
 }
 
 message ClusterInfoRequest {}
@@ -172,10 +180,22 @@ message TableLimitsRequest {
 
 message TableLimitsResponse {}
 
+message IsolateRequest {
+  int64 duration_ms = 1;
+}
+
+message IsolateResponse {
+  string node_id = 1;
+  int64 isolated_ms = 2;
+}
+
 service AdminService {
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc NodeStats(NodeStatsRequest) returns (NodeStatsResponse);
   rpc ClusterInfo(ClusterInfoRequest) returns (ClusterInfoResponse);
   rpc PreferenceList(PreferenceListRequest) returns (PreferenceListResponse);
   rpc SetTableLimits(TableLimitsRequest) returns (TableLimitsResponse);
+  // Debug only (debug.fault_injection = true): cut this node off from its
+  // peers for duration_ms, a simulated network partition.
+  rpc Isolate(IsolateRequest) returns (IsolateResponse);
 }
