@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_COMMIT: 054bd01bec7f31492ec9ac063740cc984a0fe59e
+  VCPKG_DISABLE_METRICS: "1"
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format (pinned to the version in .clang-format)
+        run: |
+          pip install --quiet clang-format==23.1.5
+          git ls-files '*.h' '*.cc' | xargs clang-format --dry-run --Werror
+
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.preset }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, preset: dev, tidy: true }
+          - { os: ubuntu-24.04, preset: asan }
+          - { os: ubuntu-24.04, preset: tsan }
+          - { os: macos-15, preset: dev }
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-bincache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build clang-18 \
+            pkg-config autoconf automake autoconf-archive libtool
+          echo "CC=clang-18" >> "$GITHUB_ENV"
+          echo "CXX=clang++-18" >> "$GITHUB_ENV"
+          # TSan in clang-18 cannot map shadow memory with 32-bit mmap ASLR entropy.
+          sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Install toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja autoconf automake libtool
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: .vcpkg-bincache
+          # Sanitizers are not applied to vcpkg ports, so every preset on an OS
+          # shares the same prebuilt packages.
+          key: vcpkg-${{ matrix.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.os }}-
+
+      - name: Bootstrap vcpkg
+        run: |
+          mkdir -p .vcpkg-bincache
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout "$VCPKG_COMMIT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+      - name: clang-tidy (pinned; same major version as local Homebrew LLVM)
+        if: matrix.tidy
+        run: |
+          pip install --quiet clang-tidy==23.1.4
+          git ls-files 'src/*.cc' 'tests/*.cc' 'bench/*.cc' \
+            | xargs -P "$(nproc)" -n 4 clang-tidy -p build/${{ matrix.preset }} --quiet

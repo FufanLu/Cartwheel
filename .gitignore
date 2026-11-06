@@ -1,0 +1,21 @@
+# Build output
+/build/
+/out/
+/vcpkg_installed/
+compile_commands.json
+.cache/
+
+# Frontend
+node_modules/
+/web/dist/
+*.tsbuildinfo
+
+# Runtime data from local runs
+/data/
+*.log
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp

@@ -1,0 +1,25 @@
+---
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-signed-bitwise,
+  concurrency-*,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-virtual-class-destructor,
+  misc-unused-using-decls,
+  misc-redundant-expression,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-make-unique,
+  modernize-make-shared,
+  performance-*,
+  readability-container-size-empty,
+  readability-make-member-function-const,
+  readability-redundant-string-cstr
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/(src|tests|bench)/.*'
+FormatStyle: file
+...

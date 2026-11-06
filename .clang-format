@@ -1,0 +1,22 @@
+---
+# Pinned to clang-format 23.1.5 (CI installs the same version from PyPI).
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 100
+DerivePointerAlignment: false
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortCaseLabelsOnASingleLine: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  # Related header first is handled by IncludeIsMainRegex; then system, third-party, project.
+  - Regex: '^<[a-z_]+>$'
+    Priority: 1
+  - Regex: '^<(sys/)?[a-z_]+\.h>$'
+    Priority: 1
+  - Regex: '^<.*'
+    Priority: 2
+  - Regex: '^".*'
+    Priority: 3
+...

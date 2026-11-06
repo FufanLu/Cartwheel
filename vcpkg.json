@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "cartwheel",
+  "version-semver": "0.1.0",
+  "description": "Dynamo-style distributed KV store and high-concurrency commerce stack in C++20",
+  "builtin-baseline": "054bd01bec7f31492ec9ac063740cc984a0fe59e",
+  "dependencies": [
+    "fmt",
+    "spdlog",
+    "tomlplusplus",
+    "cli11",
+    "nlohmann-json",
+    {
+      "name": "prometheus-cpp",
+      "default-features": false,
+      "features": ["pull"]
+    },
+    "protobuf",
+    "grpc",
+    "boost-asio",
+    "boost-beast",
+    "gtest",
+    "benchmark"
+  ]
+}

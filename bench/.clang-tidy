@@ -1,0 +1,6 @@
+---
+# Fixed RNG seeds are intentional here: tests and doc traces must be reproducible.
+InheritParentConfig: true
+Checks: >
+  -bugprone-random-generator-seed
+...
