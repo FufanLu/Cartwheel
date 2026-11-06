@@ -30,6 +30,8 @@ enum class StatusCode : uint8_t {
   kCancelled,
   kUnimplemented,
   kInternal,
+  kUnauthenticated,   // no or invalid credentials
+  kPermissionDenied,  // authenticated, but not allowed
 };
 
 std::string_view StatusCodeName(StatusCode code) noexcept;
@@ -73,6 +75,12 @@ class [[nodiscard]] Status {
     return {StatusCode::kUnimplemented, std::move(msg)};
   }
   static Status Internal(std::string msg) { return {StatusCode::kInternal, std::move(msg)}; }
+  static Status Unauthenticated(std::string msg) {
+    return {StatusCode::kUnauthenticated, std::move(msg)};
+  }
+  static Status PermissionDenied(std::string msg) {
+    return {StatusCode::kPermissionDenied, std::move(msg)};
+  }
 
   [[nodiscard]] bool ok() const noexcept { return code_ == StatusCode::kOk; }
   [[nodiscard]] StatusCode code() const noexcept { return code_; }

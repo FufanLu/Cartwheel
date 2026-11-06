@@ -49,7 +49,7 @@ flowchart LR
 | M1 | End-to-end skeleton: single node (DVV siblings), cart-svc (OR-Set CRDT), Beast/coroutine gateway, storefront, docker-compose | ✅ |
 | M2 | LSM storage engine: WAL, group commit, skiplist memtable, SSTables + bloom, leveled compaction; SIGKILL/power-loss/fuzz tested; 62–92% of RocksDB | ✅ |
 | M3 | Distribution: consistent hashing (64 vnodes), heartbeat gossip, N/R/W sloppy quorum, DVV siblings, hinted handoff, read repair, Merkle anti-entropy, per-table throttling; deterministic simulator with crashes/partitions; a node kill under load costs only its ~3.5 s detection window | ✅ |
-| M4 | Lightning-deal pipeline: Redis gate, Redpanda, order-worker, Postgres; gateway auth and rate limiting | |
+| M4 | Lightning deals: atomic Redis Lua gate → idempotent Kafka/Redpanda log → batched Postgres commits with constraints of last resort; holds never released (redrive + sweeper); JWT, per-user GCRA, WebSocket push. 10k buyers / 1k units: sold out in 0.28 s, committed in 0.73 s, no oversell through worker kills and broker freezes | ✅ |
 | M5 | Storefront and ops console (hash ring, live QPS/p99, fault injection) | |
 | M6 | Observability (Prometheus, Grafana, OpenTelemetry), k6 load tests, chaos experiments | |
 | M7 | Helm/kind deployment, PRFAQ, runbooks | |
@@ -92,6 +92,20 @@ build/release/src/tools/wheelctl -t 127.0.0.1:7101 where carts ada
 build/release/src/tools/wheel-bench --workload=A --threads=32 --duration=30 \
   --targets=127.0.0.1:7101,127.0.0.1:7102,127.0.0.1:7103,127.0.0.1:7104,127.0.0.1:7105 &
 scripts/local_cluster.sh kill 3; sleep 10; scripts/local_cluster.sh restart 3   # watch the error column
+```
+
+The lightning-deal pipeline needs Postgres, Redis and Kafka. `scripts/local_infra.sh` runs them
+natively (Homebrew) on ports that stay clear of other local stacks:
+
+```bash
+scripts/local_infra.sh start && eval "$(scripts/local_infra.sh env)"
+build/release/src/services/deal/deal-svc &                 # or CARTWHEEL_DEAL_BACKEND=memory, no infra
+build/release/src/services/order_worker/order-worker &
+CARTWHEEL_NOTIFY_REDIS_URL=$CARTWHEEL_REDIS_URL CARTWHEEL_AUTH_ADMIN_TOKEN=dev-admin \
+  build/release/src/gateway/gateway &
+build/release/src/tools/deal-rush --gateway 127.0.0.1:8080 --users 10000 --quantity 1000 \
+  --pg-url "$CARTWHEEL_POSTGRES_URL"                       # spike + invariant check
+ctest --preset dev -L infra                                # integration tests against the real services
 ```
 
 In the storefront, **Race two writers** fires two adds at the same instant: the store keeps two DVV

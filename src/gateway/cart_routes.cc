@@ -25,18 +25,31 @@ Response CartOrError(const grpc::Status& s, const Cart& cart, const RequestConte
 }  // namespace
 
 CartRoutes::CartRoutes(std::shared_ptr<cart::v1::CartService::Stub> stub,
-                       std::chrono::milliseconds upstream_timeout)
-    : stub_(std::move(stub)), timeout_(upstream_timeout) {}
+                       std::chrono::milliseconds upstream_timeout, const Authenticator* auth,
+                       bool allow_anonymous)
+    : stub_(std::move(stub)),
+      timeout_(upstream_timeout),
+      auth_(auth),
+      allow_anonymous_(allow_anonymous) {}
 
 void CartRoutes::Register(Router* router) {
-  router->Add(http::verb::get, "/api/v1/carts/{user}",
-              [this](RequestContext& c) { return Get(c); });
-  router->Add(http::verb::post, "/api/v1/carts/{user}/items",
-              [this](RequestContext& c) { return AddItem(c); });
+  using Method = boost::asio::awaitable<Response> (CartRoutes::*)(RequestContext&);
+  auto guarded = [this](Method method) -> Handler {
+    return [this, method](RequestContext& c) -> boost::asio::awaitable<Response> {
+      if (auth_ != nullptr) {
+        if (auto s = auth_->AuthorizeUser(c.request, c.params.at("user"), allow_anonymous_);
+            !s.ok()) {
+          co_return ErrorResponse(s, c);
+        }
+      }
+      co_return co_await (this->*method)(c);
+    };
+  };
+  router->Add(http::verb::get, "/api/v1/carts/{user}", guarded(&CartRoutes::Get));
+  router->Add(http::verb::post, "/api/v1/carts/{user}/items", guarded(&CartRoutes::AddItem));
   router->Add(http::verb::delete_, "/api/v1/carts/{user}/items/{sku}",
-              [this](RequestContext& c) { return RemoveItem(c); });
-  router->Add(http::verb::delete_, "/api/v1/carts/{user}",
-              [this](RequestContext& c) { return Clear(c); });
+              guarded(&CartRoutes::RemoveItem));
+  router->Add(http::verb::delete_, "/api/v1/carts/{user}", guarded(&CartRoutes::Clear));
 }
 
 nlohmann::json CartRoutes::CartToJson(const Cart& cart) {

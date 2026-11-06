@@ -19,6 +19,8 @@ std::string_view StatusCodeName(StatusCode code) noexcept {
     case StatusCode::kCancelled: return "Cancelled";
     case StatusCode::kUnimplemented: return "Unimplemented";
     case StatusCode::kInternal: return "Internal";
+    case StatusCode::kUnauthenticated: return "Unauthenticated";
+    case StatusCode::kPermissionDenied: return "PermissionDenied";
   }
   return "Unknown";
 }

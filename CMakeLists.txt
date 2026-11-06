@@ -72,6 +72,17 @@ find_package(protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 find_package(Boost CONFIG REQUIRED COMPONENTS asio beast)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
+find_package(libpqxx CONFIG REQUIRED)
+# A static libpq also needs libpgcommon and libpgport. vcpkg's wrapper adds
+# them per build configuration, which misses Debug with release-only triplets.
+find_library(CARTWHEEL_PGCOMMON_LIB NAMES pgcommon REQUIRED)
+find_library(CARTWHEEL_PGPORT_LIB NAMES pgport REQUIRED)
+add_library(cartwheel_pq INTERFACE)
+target_link_libraries(cartwheel_pq INTERFACE
+  libpqxx::pqxx ${CARTWHEEL_PGCOMMON_LIB} ${CARTWHEEL_PGPORT_LIB} OpenSSL::SSL OpenSSL::Crypto)
+find_package(redis++ CONFIG REQUIRED)
+find_package(RdKafka CONFIG REQUIRED)
 
 # gRPC server reflection (for grpcurl) is optional: vcpkg builds gRPC for the
 # sanitizer triplets as a cross-compile, which skips codegen-dependent libs.

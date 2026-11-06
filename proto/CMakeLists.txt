@@ -11,3 +11,7 @@ cartwheel_proto_library(cartwheel_cart_proto
 cartwheel_proto_library(cartwheel_cluster_proto
   PROTOS cartwheel/cluster/v1/cluster.proto
   GRPC)
+
+cartwheel_proto_library(cartwheel_deal_proto
+  PROTOS cartwheel/deal/v1/deal.proto
+  GRPC)

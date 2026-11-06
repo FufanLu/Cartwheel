@@ -32,3 +32,9 @@ target_link_libraries(lsm-tour PRIVATE cartwheel::storage)
 add_executable(wheel-bench wheel_bench.cc)
 cartwheel_target_defaults(wheel-bench)
 target_link_libraries(wheel-bench PRIVATE cartwheel::client CLI11::CLI11)
+
+# deal-rush: lightning-deal spike through the gateway (HTTP + WebSocket).
+add_executable(deal-rush deal_rush.cc)
+cartwheel_target_defaults(deal-rush)
+target_link_libraries(deal-rush PRIVATE cartwheel::common Boost::asio Boost::beast
+  nlohmann_json::nlohmann_json CLI11::CLI11 cartwheel_pq)

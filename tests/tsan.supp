@@ -8,3 +8,10 @@
 # worker_thread()/master_thread() without atomics. The workers only observe
 # the flag eventually; shutdown joins them before freeing the context.
 race:civetweb.c
+
+# libpq: pqSaveParameterStatus() copies each new connection's client_encoding
+# and standard_conforming_strings into the process-wide globals
+# static_client_encoding / static_std_strings. Only the deprecated
+# connection-less PQescapeString()/PQescapeBytea() read them; libpqxx uses the
+# connection-aware variants. Concurrent connects write the same values.
+race:pqSaveParameterStatus

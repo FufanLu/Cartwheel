@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
-# One image carrying every C++ service (wheel-node, cart-svc, gateway); compose
+# One image carrying every C++ service (wheel-node, cart-svc, deal-svc,
+# order-worker, gateway); compose
 # picks the binary with `command:`. Builds on the prebuilt dependency image, so
 # a code change recompiles only Cartwheel.
 #
@@ -17,11 +18,15 @@ RUN cmake --preset release \
       -DVCPKG_MANIFEST_INSTALL=OFF \
       -DCARTWHEEL_BUILD_TESTS=OFF \
       -DCARTWHEEL_BUILD_BENCH=OFF \
-    && cmake --build --preset release --target wheel-node cart-svc gateway \
+    && cmake --build --preset release \
+         --target wheel-node cart-svc deal-svc order-worker gateway wheelctl \
     && install -D -m 0755 -t /out \
          build/release/src/kv/wheel-node \
          build/release/src/services/cart/cart-svc \
-         build/release/src/gateway/gateway
+         build/release/src/services/deal/deal-svc \
+         build/release/src/services/order_worker/order-worker \
+         build/release/src/gateway/gateway \
+         build/release/src/tools/wheelctl
 
 FROM ubuntu:24.04 AS runtime
 RUN apt-get update \

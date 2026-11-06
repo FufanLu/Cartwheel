@@ -21,6 +21,10 @@
     "grpc",
     "boost-asio",
     "boost-beast",
+    "openssl",
+    "libpqxx",
+    "redis-plus-plus",
+    "librdkafka",
     "gtest",
     "benchmark"
   ],

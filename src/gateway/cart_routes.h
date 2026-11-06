@@ -6,6 +6,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "cartwheel/cart/v1/cart.grpc.pb.h"
+#include "gateway/auth.h"
 #include "gateway/http.h"
 
 namespace cartwheel::gateway {
@@ -18,8 +19,11 @@ namespace cartwheel::gateway {
 //   DELETE /api/v1/carts/{user}
 class CartRoutes {
  public:
+  // With `auth`, a request carrying a Bearer token may only touch the token's
+  // own cart; requests without one are allowed only if `allow_anonymous`.
   CartRoutes(std::shared_ptr<cart::v1::CartService::Stub> stub,
-             std::chrono::milliseconds upstream_timeout);
+             std::chrono::milliseconds upstream_timeout, const Authenticator* auth = nullptr,
+             bool allow_anonymous = true);
   void Register(Router* router);
 
   [[nodiscard]] static nlohmann::json CartToJson(const cart::v1::Cart& cart);
@@ -32,6 +36,8 @@ class CartRoutes {
 
   std::shared_ptr<cart::v1::CartService::Stub> stub_;
   std::chrono::milliseconds timeout_;
+  const Authenticator* auth_;
+  bool allow_anonymous_;
 };
 
 }  // namespace cartwheel::gateway

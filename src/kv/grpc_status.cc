@@ -33,6 +33,9 @@ grpc::Status ToGrpc(const Status& s) {
     case cartwheel::StatusCode::kCancelled: return {StatusCode::CANCELLED, s.message()};
     case cartwheel::StatusCode::kUnimplemented: return {StatusCode::UNIMPLEMENTED, s.message()};
     case cartwheel::StatusCode::kInternal: return {StatusCode::INTERNAL, s.message()};
+    case cartwheel::StatusCode::kUnauthenticated: return {StatusCode::UNAUTHENTICATED, s.message()};
+    case cartwheel::StatusCode::kPermissionDenied:
+      return {StatusCode::PERMISSION_DENIED, s.message()};
   }
   return {StatusCode::UNKNOWN, s.message()};
 }
@@ -56,6 +59,8 @@ Status FromGrpc(const grpc::Status& s) {
     case grpc::StatusCode::DATA_LOSS: return Status::Corruption(msg);
     case grpc::StatusCode::CANCELLED: return Status::Cancelled(msg);
     case grpc::StatusCode::UNIMPLEMENTED: return Status::Unimplemented(msg);
+    case grpc::StatusCode::UNAUTHENTICATED: return Status::Unauthenticated(msg);
+    case grpc::StatusCode::PERMISSION_DENIED: return Status::PermissionDenied(msg);
     default: return Status::Internal(msg);
   }
 }

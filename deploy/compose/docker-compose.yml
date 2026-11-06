@@ -1,4 +1,6 @@
-# Five-node CartwheelKV cluster (N=3, R=2, W=2), cart-svc, gateway, storefront.
+# Five-node CartwheelKV cluster (N=3, R=2, W=2), cart-svc, the lightning-deal
+# pipeline (Postgres, Redis, Redpanda, deal-svc, two order-workers), gateway,
+# storefront.
 #   docker compose -f deploy/compose/docker-compose.yml up -d --build
 #   open http://localhost:8088
 name: cartwheel
@@ -17,6 +19,12 @@ x-service: &service
   image: cartwheel:dev
   restart: unless-stopped
   stop_grace_period: 10s   # covers drain grace + in-flight RPC deadline
+
+x-deal-infra: &deal-infra
+  CARTWHEEL_POSTGRES_URL: postgresql://cartwheel:cartwheel@postgres:5432/cartwheel
+  CARTWHEEL_REDIS_URL: redis://redis:6379
+  CARTWHEEL_KAFKA_BROKERS: redpanda:9092
+  CARTWHEEL_KAFKA_REPLICATION: "1"   # single-broker dev stack; 3 in production
 
 services:
   wheel-1:
@@ -123,15 +131,88 @@ services:
       interval: 2s
       retries: 15
 
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: cartwheel
+      POSTGRES_PASSWORD: cartwheel
+      POSTGRES_DB: cartwheel
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "cartwheel"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    # AOF: a restart keeps holds; losing them is still safe (Postgres re-checks).
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+    volumes: ["redpanda-data:/var/lib/redpanda/data"]
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      interval: 3s
+      retries: 30
+
+  deal-svc:
+    <<: *service
+    command: ["deal-svc"]
+    environment:
+      <<: *deal-infra
+      CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7300
+      CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9300
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      redpanda: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7300"]
+      interval: 2s
+      retries: 30
+
+  # Two workers in one consumer group share the topic's partitions; kill one
+  # and the other takes its partitions after session.timeout.ms (10 s).
+  order-worker-1: &order-worker
+    <<: *service
+    command: ["order-worker"]
+    environment:
+      <<: *deal-infra
+      CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9400
+    depends_on:
+      deal-svc: { condition: service_healthy }
+
+  order-worker-2: *order-worker
+
   gateway:
     <<: *service
     command: ["gateway"]
     environment:
       CARTWHEEL_SERVER_PORT: "8080"
       CARTWHEEL_CART_TARGET: cart-svc:7200
+      CARTWHEEL_DEAL_TARGET: deal-svc:7300
+      CARTWHEEL_NOTIFY_REDIS_URL: redis://redis:6379
+      # Demo values; set real secrets through the environment.
+      CARTWHEEL_AUTH_JWT_SECRET: ${CARTWHEEL_JWT_SECRET:-compose-dev-secret}
+      CARTWHEEL_AUTH_ADMIN_TOKEN: ${CARTWHEEL_ADMIN_TOKEN:-dev-admin}
     ports: ["8080:8080"]
     depends_on:
       cart-svc: { condition: service_healthy }
+      deal-svc: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
       interval: 2s
@@ -152,3 +233,6 @@ volumes:
   wheel-3-data:
   wheel-4-data:
   wheel-5-data:
+  postgres-data:
+  redis-data:
+  redpanda-data:

@@ -98,6 +98,8 @@ http::status HttpStatusFor(StatusCode code) noexcept {
     case StatusCode::kUnavailable: return http::status::service_unavailable;
     case StatusCode::kDeadlineExceeded: return http::status::gateway_timeout;
     case StatusCode::kUnimplemented: return http::status::not_implemented;
+    case StatusCode::kUnauthenticated: return http::status::unauthorized;
+    case StatusCode::kPermissionDenied: return http::status::forbidden;
     default: return http::status::internal_server_error;
   }
 }

@@ -31,7 +31,9 @@ cartwheel_add_test(cart_test
   LABELS unit)
 
 cartwheel_add_test(gateway_test
-  SOURCES gateway/router_test.cc
+  SOURCES
+    gateway/jwt_test.cc
+    gateway/router_test.cc
   LIBS cartwheel::gateway
   LABELS unit)
 
@@ -41,4 +43,9 @@ cartwheel_add_test(storage_test
     storage/table_test.cc
     storage/wal_test.cc
   LIBS cartwheel::storage
+  LABELS unit)
+
+cartwheel_add_test(deal_test
+  SOURCES deal/deal_test.cc
+  LIBS cartwheel::deal_core
   LABELS unit)

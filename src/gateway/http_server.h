@@ -3,11 +3,13 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
 
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/beast/core/tcp_stream.hpp>
 #include <prometheus/counter.h>
 #include <prometheus/gauge.h>
 #include <prometheus/histogram.h>
@@ -39,6 +41,12 @@ class HttpServer {
   HttpServer(const HttpServer&) = delete;
   HttpServer& operator=(const HttpServer&) = delete;
 
+  // A WebSocket upgrade on `path` hands the connection to `handler`, which
+  // owns it from then on (it still counts as one connection, not a request).
+  using UpgradeHandler =
+      std::function<boost::asio::awaitable<void>(boost::beast::tcp_stream, Request)>;
+  void SetUpgradeHandler(std::string path, UpgradeHandler handler);
+
   Status Start();
   void Stop();
 
@@ -55,6 +63,8 @@ class HttpServer {
 
   const HttpServerOptions options_;
   const Router* router_;
+  std::string upgrade_path_;
+  UpgradeHandler upgrade_;
   IoContextPool pool_;
   boost::asio::io_context accept_context_{1};
   std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor_;

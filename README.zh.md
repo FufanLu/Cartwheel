@@ -43,7 +43,7 @@ flowchart LR
 | M1 | 端到端骨架：单节点（DVV siblings）、cart-svc（OR-Set CRDT）、Beast + 协程网关、商城前端、docker-compose | ✅ |
 | M2 | LSM 存储引擎：WAL、group commit、skiplist memtable、SSTable + 布隆过滤器、分层 compaction；通过 SIGKILL、断电、fuzz 测试；吞吐达到 RocksDB 的 62–92% | ✅ |
 | M3 | 分布式：一致性哈希（64 vnode）、心跳 gossip、N/R/W sloppy quorum、DVV siblings、hinted handoff、read repair、Merkle 反熵、按表限流；带宕机和分区的确定性仿真；压测中 kill 一个节点，只在约 3.5 秒的故障检测窗口内报错 | ✅ |
-| M4 | 秒杀链路：Redis 闸门、Redpanda、order-worker、Postgres；网关鉴权与限流 | |
+| M4 | 秒杀链路：Redis Lua 原子闸门 → 幂等 Kafka/Redpanda 日志 → Postgres 批量提交（带兜底约束）；占位永不释放（重发队列 + 清扫器）；JWT、按用户 GCRA 限流、WebSocket 推送。1 万人抢 1000 件：0.28 秒卖光、0.73 秒全部落库，kill worker、冻结 broker 都不超卖 | ✅ |
 | M5 | 商城前端与运维控制台（哈希环、实时 QPS/p99、故障注入） | |
 | M6 | 可观测性（Prometheus、Grafana、OpenTelemetry）、k6 压测、混沌实验 | |
 | M7 | Helm/kind 部署、PRFAQ、runbook | |
@@ -85,6 +85,19 @@ build/release/src/tools/wheelctl -t 127.0.0.1:7101 where carts ada
 build/release/src/tools/wheel-bench --workload=A --threads=32 --duration=30 \
   --targets=127.0.0.1:7101,127.0.0.1:7102,127.0.0.1:7103,127.0.0.1:7104,127.0.0.1:7105 &
 scripts/local_cluster.sh kill 3; sleep 10; scripts/local_cluster.sh restart 3   # 观察 errors 列
+```
+
+秒杀链路依赖 Postgres、Redis、Kafka。`scripts/local_infra.sh` 用 Homebrew 在本机直接启动它们，端口和其他本地项目错开：
+
+```bash
+scripts/local_infra.sh start && eval "$(scripts/local_infra.sh env)"
+build/release/src/services/deal/deal-svc &                 # 或 CARTWHEEL_DEAL_BACKEND=memory，不需要外部依赖
+build/release/src/services/order_worker/order-worker &
+CARTWHEEL_NOTIFY_REDIS_URL=$CARTWHEEL_REDIS_URL CARTWHEEL_AUTH_ADMIN_TOKEN=dev-admin \
+  build/release/src/gateway/gateway &
+build/release/src/tools/deal-rush --gateway 127.0.0.1:8080 --users 10000 --quantity 1000 \
+  --pg-url "$CARTWHEEL_POSTGRES_URL"                       # 瞬时抢购压测 + 不变量检查
+ctest --preset dev -L infra                                # 连真实服务的集成测试
 ```
 
 在商城页面里点 **Race two writers**，会同时发出两个加购请求。存储里会留下两个 DVV sibling，购物车显示 "Merged 2 concurrent versions"，两件商品都在。

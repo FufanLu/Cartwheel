@@ -17,7 +17,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential clang-18 clang-tidy-18 lld-18 llvm-18 \
       ninja-build git curl ca-certificates zip unzip tar pkg-config \
-      autoconf automake autoconf-archive libtool python3 linux-libc-dev \
+      autoconf automake autoconf-archive libtool python3 linux-libc-dev bison flex \
     && rm -rf /var/lib/apt/lists/*
 
 # Ubuntu's CMake (3.28) predates our presets' features; use Kitware's build.

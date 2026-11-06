@@ -5,6 +5,7 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <boost/beast/core.hpp>
+#include <boost/beast/websocket/rfc6455.hpp>
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
@@ -43,6 +44,11 @@ HttpServer::HttpServer(HttpServerOptions options, const Router* router,
 
 HttpServer::~HttpServer() {
   Stop();
+}
+
+void HttpServer::SetUpgradeHandler(std::string path, UpgradeHandler handler) {
+  upgrade_path_ = std::move(path);
+  upgrade_ = std::move(handler);
 }
 
 Status HttpServer::Start() {
@@ -97,6 +103,15 @@ asio::awaitable<void> HttpServer::Session(tcp::socket socket) {
     auto [ec, n] =
         co_await http::async_read(stream, buffer, parser, asio::as_tuple(asio::use_awaitable));
     if (ec) break;  // closed, timed out, or malformed: drop the connection
+    if (upgrade_ && boost::beast::websocket::is_upgrade(parser.get())) {
+      std::string_view target = parser.get().target();
+      target = target.substr(0, target.find('?'));
+      if (target == upgrade_path_) {
+        stream.expires_never();
+        co_await upgrade_(std::move(stream), parser.release());
+        co_return;
+      }
+    }
     const Request& req = parser.get();
 
     const auto start = std::chrono::steady_clock::now();

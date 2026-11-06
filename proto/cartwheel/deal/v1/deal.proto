@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+// Lightning deals: a fixed number of units at a discount, sold in a short
+// window, one unit per customer.
+//
+// Carts are AP (always writable, merged later). A deal's inventory is the
+// opposite: it must never oversell, so this path is CP end to end.
+//   1. deal-svc reserves a unit with one atomic Redis Lua script (the gate).
+//   2. The reservation is appended to Redpanda (Kafka API), which absorbs
+//      the spike: the gate answers in microseconds, the database does not
+//      have to.
+//   3. order-worker consumes in batches and commits orders to Postgres
+//      idempotently. Postgres is the source of truth and re-checks the
+//      quantity under a row lock, so even a Redis failover cannot oversell.
+package cartwheel.deal.v1;
+
+message Deal {
+  string deal_id = 1;
+  string sku = 2;
+  string title = 3;
+  int64 price_cents = 4;
+  int64 list_price_cents = 5;
+  // Units on offer in the current generation.
+  int32 quantity = 6;
+  // Units the gate can still reserve (Redis).
+  int32 remaining = 7;
+  // Orders committed in Postgres.
+  int32 sold = 8;
+  int64 starts_at_ms = 9;  // unix millis
+  int64 ends_at_ms = 10;
+  // Bumped by ResetDeal. Reservations and orders carry it, so leftovers of an
+  // earlier run can never count against the new one.
+  int64 generation = 11;
+}
+
+message ListDealsRequest {}
+
+message ListDealsResponse {
+  repeated Deal deals = 1;
+  // Lets clients render countdowns against the server's clock.
+  int64 server_time_ms = 2;
+}
+
+message GetDealRequest {
+  string deal_id = 1;
+}
+
+message ClaimRequest {
+  string deal_id = 1;
+  string user_id = 2;
+}
+
+message ClaimResponse {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // A unit is held for this user; the order is pending in the log.
+    OUTCOME_RESERVED = 1;
+    // The user already holds a unit. The same order_id is returned, so a
+    // client retry after a timeout is idempotent.
+    OUTCOME_ALREADY_CLAIMED = 2;
+    OUTCOME_SOLD_OUT = 3;
+    OUTCOME_NOT_STARTED = 4;
+    OUTCOME_ENDED = 5;
+  }
+  Outcome outcome = 1;
+  string order_id = 2;
+  int32 remaining = 3;
+}
+
+message Order {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // Reserved at the gate and in the log, not yet committed.
+    STATUS_PENDING = 1;
+    // Committed in Postgres.
+    STATUS_CONFIRMED = 2;
+    // Postgres refused it (it would oversell, or its generation is stale).
+    STATUS_REJECTED = 3;
+  }
+  string order_id = 1;
+  string deal_id = 2;
+  string user_id = 3;
+  int64 price_cents = 4;
+  Status status = 5;
+  int64 reserved_at_ms = 6;
+  int64 generation = 7;
+  string reason = 8;  // set when rejected
+}
+
+message GetOrderRequest {
+  string order_id = 1;
+  // Orders are only visible to their owner.
+  string user_id = 2;
+}
+
+message ListOrdersRequest {
+  string user_id = 1;
+}
+
+message ListOrdersResponse {
+  repeated Order orders = 1;
+}
+
+// Ops/demo: start a new generation of a deal.
+message ResetDealRequest {
+  string deal_id = 1;
+  int32 quantity = 2;
+  int64 starts_in_ms = 3;
+  int64 duration_ms = 4;
+}
+
+// The record order-worker consumes: topic "deal-orders", key = user_id.
+message OrderPlaced {
+  string order_id = 1;
+  string deal_id = 2;
+  string user_id = 3;
+  int64 price_cents = 4;
+  int64 generation = 5;
+  int64 reserved_at_ms = 6;
+}
+
+service DealService {
+  rpc ListDeals(ListDealsRequest) returns (ListDealsResponse);
+  rpc GetDeal(GetDealRequest) returns (Deal);
+  rpc Claim(ClaimRequest) returns (ClaimResponse);
+  rpc GetOrder(GetOrderRequest) returns (Order);
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+  rpc ResetDeal(ResetDealRequest) returns (Deal);
+}
