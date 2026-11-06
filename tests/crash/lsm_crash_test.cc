@@ -90,7 +90,7 @@ TEST(LsmCrashTest, AcknowledgedWritesSurviveSigkill) {
       ASSERT_EQ(*v, ValueFor(i));
     }
     std::printf("round %d: %llu keys acknowledged, all present after SIGKILL; %s\n", round,
-                static_cast<unsigned long long>(last_acked + 1), (*db)->Stats().levels.c_str());
+                static_cast<unsigned long long>(last_acked) + 1ULL, (*db)->Stats().levels.c_str());
     next = last_acked + 1;
   }
 }

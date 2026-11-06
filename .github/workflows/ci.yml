@@ -7,7 +7,9 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # On main, let a run finish: sanitizer jobs need one complete configure to
+  # populate the vcpkg cache, and a newer push would otherwise cancel it.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   VCPKG_COMMIT: 054bd01bec7f31492ec9ac063740cc984a0fe59e
