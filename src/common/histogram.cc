@@ -118,6 +118,29 @@ void HistogramSnapshot::Merge(const HistogramSnapshot& other) {
   max_ = std::max(max_, other.max_);
 }
 
+HistogramSnapshot HistogramSnapshot::Minus(const HistogramSnapshot& older) const {
+  HistogramSnapshot d;
+  d.count_ = 0;
+  for (size_t i = 0; i < buckets_.size(); ++i) {
+    d.buckets_[i] = buckets_[i] - std::min(buckets_[i], older.buckets_[i]);
+    d.count_ += d.buckets_[i];
+  }
+  d.sum_ = sum_ - std::min(sum_, older.sum_);
+  for (size_t i = 0; i < d.buckets_.size(); ++i) {
+    if (d.buckets_[i] > 0) {
+      d.min_ = Histogram::BucketLowerBound(i);
+      break;
+    }
+  }
+  for (size_t i = d.buckets_.size(); i-- > 0;) {
+    if (d.buckets_[i] > 0) {
+      d.max_ = Histogram::BucketUpperBound(i);
+      break;
+    }
+  }
+  return d;
+}
+
 std::string HistogramSnapshot::SummaryNanos() const {
   return fmt::format("n={} mean={} p50={} p90={} p99={} p99.9={} max={}", count_,
                      FormatNanos(static_cast<int64_t>(mean())), FormatNanos(Percentile(50)),

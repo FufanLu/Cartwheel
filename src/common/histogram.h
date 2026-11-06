@@ -71,6 +71,10 @@ class HistogramSnapshot {
   [[nodiscard]] int64_t Percentile(double p) const noexcept;
 
   void Merge(const HistogramSnapshot& other);
+  // The samples recorded between `older` and this snapshot of the same
+  // histogram (per-interval percentiles from a cumulative histogram). min and
+  // max are approximated by the outermost non-empty buckets.
+  [[nodiscard]] HistogramSnapshot Minus(const HistogramSnapshot& older) const;
 
   // "n=1000 mean=1.2ms p50=1.1ms p90=… p99=… p99.9=… max=…", values in ns.
   [[nodiscard]] std::string SummaryNanos() const;

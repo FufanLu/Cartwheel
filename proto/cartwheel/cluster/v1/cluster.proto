@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+// Node-to-node protocol of CartwheelKV. Cluster logic (src/cluster) speaks
+// these messages through an abstract Transport. In production they travel in
+// PeerService.Call over gRPC; in the deterministic simulator they are bytes
+// in an in-memory queue. Sibling sets travel in their storage encoding
+// (src/cluster/siblings.h), so a replica merges exactly the bytes the
+// coordinator produced.
+package cartwheel.cluster.v1;
+
+enum MessageType {
+  MESSAGE_TYPE_UNSPECIFIED = 0;
+  MESSAGE_TYPE_GOSSIP = 1;
+  MESSAGE_TYPE_REPLICA_WRITE = 2;
+  MESSAGE_TYPE_REPLICA_READ = 3;
+  MESSAGE_TYPE_MERKLE_LEVEL = 4;
+  MESSAGE_TYPE_MERKLE_KEYS = 5;
+  MESSAGE_TYPE_FORWARD_PUT = 6;
+  MESSAGE_TYPE_FORWARD_GET = 7;
+}
+
+// ---- membership (gossip) ------------------------------------------------------
+
+message Member {
+  string node_id = 1;
+  string address = 2;
+  // Bumped only by the member itself, to refute a suspicion about it.
+  uint64 incarnation = 3;
+  // Bumped by the member every gossip tick. A stale heartbeat makes others
+  // suspect it, then declare it dead.
+  uint64 heartbeat = 4;
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_ALIVE = 1;
+    STATE_SUSPECT = 2;
+    STATE_DEAD = 3;
+    STATE_LEFT = 4;  // graceful departure: no hints are kept for it
+  }
+  State state = 5;
+}
+
+message GossipRequest {
+  repeated Member members = 1;
+}
+
+message GossipResponse {
+  repeated Member members = 1;  // push-pull: the receiver answers with its view
+}
+
+// ---- replication ----------------------------------------------------------------
+
+message ReplicaWriteRequest {
+  string table = 1;
+  bytes key = 2;
+  bytes siblings = 3;  // full SiblingSet after the coordinator's write
+  // Set when this node is a sloppy-quorum stand-in: keep the data as a hint
+  // and hand it to `hint_for` once that node is reachable again.
+  string hint_for = 4;
+}
+
+message ReplicaWriteResponse {}
+
+message ReplicaReadRequest {
+  string table = 1;
+  bytes key = 2;
+}
+
+message ReplicaReadResponse {
+  bytes siblings = 1;  // empty = no versions
+}
+
+// A client request that arrived at a node outside the key's preference list
+// is forwarded to one inside it, because the coordinator must also be a
+// replica (DVV dots need a local view).
+message ForwardRequest {
+  string table = 1;
+  bytes key = 2;
+  bytes value = 3;
+  bytes context = 4;
+  bool tombstone = 5;
+  uint32 w = 6;
+  uint32 r = 7;
+}
+
+message ForwardResponse {
+  bytes siblings = 1;
+  uint32 replicas = 2;
+}
+
+// ---- anti-entropy (Merkle trees) --------------------------------------------------
+
+// Hashes of the nodes at `level` of the Merkle tree for one ring partition,
+// restricted to the subtrees whose parents differed.
+message MerkleLevelRequest {
+  uint32 partition = 1;
+  uint32 level = 2;
+  repeated uint32 indexes = 3;
+}
+
+message MerkleLevelResponse {
+  repeated fixed64 hashes = 1;  // same order as indexes
+}
+
+message MerkleKeysRequest {
+  uint32 partition = 1;
+  repeated uint32 buckets = 2;
+}
+
+message KeyVersions {
+  string table = 1;
+  bytes key = 2;
+  bytes siblings = 3;
+}
+
+message MerkleKeysResponse {
+  repeated KeyVersions entries = 1;
+}
+
+// ---- transport envelope (production) ------------------------------------------------
+
+message PeerRequest {
+  string from = 1;
+  MessageType type = 2;
+  bytes payload = 3;
+}
+
+message PeerResponse {
+  uint32 code = 1;  // cartwheel::StatusCode
+  string message = 2;
+  bytes payload = 3;
+}
+
+service PeerService {
+  rpc Call(PeerRequest) returns (PeerResponse);
+}

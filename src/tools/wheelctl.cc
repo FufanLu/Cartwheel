@@ -12,6 +12,7 @@
 
 #include <CLI/CLI.hpp>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 #include <grpcpp/grpcpp.h>
 
 #include "cartwheel/kv/v1/kv.grpc.pb.h"
@@ -103,6 +104,17 @@ int main(int argc, char** argv) {
   del->add_option("table", table)->required();
   del->add_option("key", key)->required();
   del->add_option("--context", context_hex, "hex context from a previous get");
+  auto* ring = app.add_subcommand("ring", "cluster members, ring ownership and repair counters");
+  auto* where = app.add_subcommand("where", "preference list of a key");
+  where->add_option("table", table)->required();
+  where->add_option("key", key)->required();
+  double read_rate = 0;
+  double write_rate = 0;
+  auto* limits =
+      app.add_subcommand("limits", "set per-table provisioned throughput (0 = unlimited)");
+  limits->add_option("table", table)->required();
+  limits->add_option("reads_per_sec", read_rate)->required();
+  limits->add_option("writes_per_sec", write_rate)->required();
   auto* health = app.add_subcommand("health", "node health and build");
   auto* stats = app.add_subcommand("stats", "key count and latency percentiles");
   CLI11_PARSE(app, argc, argv);
@@ -141,6 +153,47 @@ int main(int argc, char** argv) {
     v1::DeleteResponse resp;
     if (auto s = kv->Delete(WithDeadline(&ctx, timeout_ms), req, &resp); !s.ok()) return Fail(s);
     PrintVersions(resp);
+  } else if (*ring) {
+    v1::ClusterInfoResponse r;
+    if (auto s = admin->ClusterInfo(WithDeadline(&ctx, timeout_ms), {}, &r); !s.ok())
+      return Fail(s);
+    fmt::print("asked {}: N={} R={} W={}, {} tokens on the ring\n", r.node_id(), r.n(), r.r(),
+               r.w(), r.tokens_size());
+    fmt::print("{:<10} {:<22} {:<8} {:>9} {:>14}\n", "node", "address", "state", "ownership",
+               "incarnation");
+    for (const auto& m : r.members()) {
+      fmt::print("{:<10} {:<22} {:<8} {:>8.1f}% {:>14}\n", m.node_id(), m.address(), m.state(),
+                 m.ownership() * 100.0, m.incarnation());
+    }
+    fmt::print("coordinator: puts={} gets={} forwarded={} quorum_failures={} throttled={}\n",
+               r.puts(), r.gets(), r.forwarded(), r.quorum_failures(), r.throttled());
+    fmt::print(
+        "repair: read_repairs={} hints stored={} delivered={} pending={} "
+        "anti-entropy rounds={} keys repaired={}\n",
+        r.read_repairs(), r.hints_stored(), r.hints_delivered(), r.hints_pending(),
+        r.anti_entropy_rounds(), r.anti_entropy_keys_repaired());
+  } else if (*where) {
+    v1::PreferenceListRequest req;
+    req.set_table(table);
+    req.set_key(key);
+    v1::PreferenceListResponse r;
+    if (auto s = admin->PreferenceList(WithDeadline(&ctx, timeout_ms), req, &r); !s.ok()) {
+      return Fail(s);
+    }
+    fmt::print("{}/{} hashes to {:#018x} ({:.4f} of the ring)\n", table, key, r.position(),
+               static_cast<double>(r.position()) / 18446744073709551616.0);
+    fmt::print("home replicas: {}\n", fmt::join(r.home(), " -> "));
+    fmt::print("live targets:  {}\n", fmt::join(r.live(), " -> "));
+  } else if (*limits) {
+    v1::TableLimitsRequest req;
+    req.set_table(table);
+    req.set_reads_per_sec(read_rate);
+    req.set_writes_per_sec(write_rate);
+    v1::TableLimitsResponse r;
+    if (auto s = admin->SetTableLimits(WithDeadline(&ctx, timeout_ms), req, &r); !s.ok()) {
+      return Fail(s);
+    }
+    fmt::print("{}: reads {} /s, writes {} /s on this coordinator\n", table, read_rate, write_rate);
   } else if (*health) {
     v1::HealthResponse resp;
     if (auto s = admin->Health(WithDeadline(&ctx, timeout_ms), {}, &resp); !s.ok()) return Fail(s);

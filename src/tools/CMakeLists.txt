@@ -27,3 +27,8 @@ endif()
 add_executable(lsm-tour lsm_tour.cc)
 cartwheel_target_defaults(lsm-tour)
 target_link_libraries(lsm-tour PRIVATE cartwheel::storage)
+
+# wheel-bench: YCSB A/B/C against a cluster, per-second timeline.
+add_executable(wheel-bench wheel_bench.cc)
+cartwheel_target_defaults(wheel-bench)
+target_link_libraries(wheel-bench PRIVATE cartwheel::client CLI11::CLI11)

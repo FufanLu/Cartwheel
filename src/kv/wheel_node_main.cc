@@ -24,8 +24,11 @@
 #include "common/logging.h"
 #include "common/metrics.h"
 #include "common/signals.h"
+#include "kv/cluster_node.h"
 #include "kv/kv_service.h"
 #include "kv/local_store.h"
+#include "kv/peer_transport.h"
+#include "kv/timer_scheduler.h"
 #include "storage/engine.h"
 #include "storage/lsm/db.h"
 
@@ -92,8 +95,49 @@ int main(int argc, char** argv) {
     return 2;
   }
   kv::LocalStore store(node_id, std::move(engine));
-  kv::KvServiceImpl kv_service(&store, *registry);
-  kv::AdminServiceImpl admin_service(&store);
+
+  // Cluster mode (cluster.enabled = true): a Dynamo-style node that gossips
+  // with its seeds and coordinates quorum reads and writes.
+  //   cluster.seeds = ["wheel-2=wheel-2:7100", ...]   (id=address)
+  //   node.advertise = "wheel-1:7100"                 (how peers reach us)
+  const bool clustered = cfg.GetBool("cluster.enabled", false);
+  std::unique_ptr<kv::TimerScheduler> scheduler;
+  std::unique_ptr<kv::GrpcPeerTransport> transport;
+  std::unique_ptr<kv::ClusterNode> cluster_node;
+  std::unique_ptr<kv::PeerServiceImpl> peer_service;
+  if (clustered) {
+    kv::ClusterOptions copts;
+    copts.n = static_cast<size_t>(cfg.GetInt("cluster.n", 3));
+    copts.r = static_cast<size_t>(cfg.GetInt("cluster.r", 2));
+    copts.w = static_cast<size_t>(cfg.GetInt("cluster.w", 2));
+    copts.vnodes = static_cast<int>(cfg.GetInt("cluster.vnodes", 64));
+    scheduler = std::make_unique<kv::TimerScheduler>();
+    // Resolve peer addresses through the node's membership table. Captures
+    // `cluster_node` (main's scope), which outlives the transport.
+    transport =
+        std::make_unique<kv::GrpcPeerTransport>(node_id, [&cluster_node](const std::string& n) {
+          return cluster_node ? cluster_node->membership().AddressOf(n) : std::string();
+        });
+    // Wall-clock millis: strictly larger after every restart, so peers
+    // accept our reset heartbeat counter.
+    const auto incarnation = static_cast<uint64_t>(SystemClock::Default()->WallMillis());
+    cluster::Runtime rt{transport.get(), scheduler.get(), SystemClock::Default(),
+                        static_cast<uint64_t>(SystemClock::Default()->NowNanos())};
+    cluster_node = std::make_unique<kv::ClusterNode>(
+        node_id, cfg.GetString("node.advertise", listen), incarnation, &store, rt, copts);
+    for (const auto& seed : cfg.GetStringList("cluster.seeds")) {
+      const auto eq = seed.find('=');
+      if (eq == std::string::npos) {
+        CW_LOG_ERROR("bad cluster seed '{}' (expected id=host:port)", seed);
+        return 2;
+      }
+      cluster_node->AddSeed(seed.substr(0, eq), seed.substr(eq + 1));
+    }
+    peer_service = std::make_unique<kv::PeerServiceImpl>(cluster_node.get());
+  }
+
+  kv::KvServiceImpl kv_service(&store, *registry, cluster_node.get());
+  kv::AdminServiceImpl admin_service(&store, cluster_node.get());
 
   grpc::EnableDefaultHealthCheckService(true);
 #if defined(CARTWHEEL_HAVE_GRPC_REFLECTION)
@@ -107,6 +151,7 @@ int main(int argc, char** argv) {
   builder.AddListeningPort(listen, grpc::InsecureServerCredentials(), &bound_port);
   builder.RegisterService(&kv_service);
   builder.RegisterService(&admin_service);
+  if (peer_service) builder.RegisterService(peer_service.get());
   // Bound concurrent streams per connection; excess requests queue in HTTP/2
   // flow control instead of piling up inside the server.
   builder.AddChannelArgument(GRPC_ARG_MAX_CONCURRENT_STREAMS, 1024);
@@ -117,15 +162,22 @@ int main(int argc, char** argv) {
     return 1;
   }
   server->GetHealthCheckService()->SetServingStatus(true);
-  CW_LOG_INFO("wheel-node {} serving on {} (engine={}, metrics :{}, version {} {})", node_id,
-              listen, store.engine().Name(), (*metrics)->port(), kVersion, kGitSha);
+  if (cluster_node) cluster_node->Start();
+  CW_LOG_INFO("wheel-node {} serving on {} (engine={}, {}, metrics :{}, version {} {})", node_id,
+              listen, store.engine().Name(),
+              clustered ? fmt::format("cluster N={} R={} W={}", cluster_node->options().n,
+                                      cluster_node->options().r, cluster_node->options().w)
+                        : std::string("single node"),
+              (*metrics)->port(), kVersion, kGitSha);
 
   const int sig = WaitForTerminationSignal();
   CW_LOG_INFO("signal {}: draining for {} ms", sig, drain_grace.count());
   admin_service.SetDraining();
   server->GetHealthCheckService()->SetServingStatus(false);
   std::this_thread::sleep_for(drain_grace);
+  if (cluster_node) cluster_node->Stop();
   server->Shutdown(std::chrono::system_clock::now() + shutdown_deadline);
+  if (scheduler) scheduler->Stop();
   CW_LOG_INFO("wheel-node {} stopped", node_id);
   return 0;
 }

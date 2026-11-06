@@ -14,6 +14,7 @@ cartwheel_add_test(common_test
 
 cartwheel_add_test(cluster_test
   SOURCES
+    cluster/ring_test.cc
     cluster/siblings_test.cc
     cluster/vector_clock_test.cc
   LIBS cartwheel::cluster

@@ -42,7 +42,7 @@ flowchart LR
 | M0 | 工具链、构建系统、过载保护原语（GCRA 限流、jitter 退避、直方图、有界线程池）、CI | ✅ |
 | M1 | 端到端骨架：单节点（DVV siblings）、cart-svc（OR-Set CRDT）、Beast + 协程网关、商城前端、docker-compose | ✅ |
 | M2 | LSM 存储引擎：WAL、group commit、skiplist memtable、SSTable + 布隆过滤器、分层 compaction；通过 SIGKILL、断电、fuzz 测试；吞吐达到 RocksDB 的 62–92% | ✅ |
-| M3 | 分布式：一致性哈希、gossip、quorum、vector clock、hinted handoff、Merkle 反熵、确定性仿真 | |
+| M3 | 分布式：一致性哈希（64 vnode）、心跳 gossip、N/R/W sloppy quorum、DVV siblings、hinted handoff、read repair、Merkle 反熵、按表限流；带宕机和分区的确定性仿真；压测中 kill 一个节点，只在约 3.5 秒的故障检测窗口内报错 | ✅ |
 | M4 | 秒杀链路：Redis 闸门、Redpanda、order-worker、Postgres；网关鉴权与限流 | |
 | M5 | 商城前端与运维控制台（哈希环、实时 QPS/p99、故障注入） | |
 | M6 | 可观测性（Prometheus、Grafana、OpenTelemetry）、k6 压测、混沌实验 | |
@@ -74,6 +74,17 @@ scripts/e2e_smoke.sh http://127.0.0.1:8080    # 验证幂等、20 个并发加�
 
 # 或者用容器跑整套服务
 docker compose -f deploy/compose/docker-compose.yml up -d --build   # http://localhost:8088
+```
+
+在本机起一个 5 节点的 CartwheelKV 集群（N=3, R=2, W=2）：
+
+```bash
+scripts/local_cluster.sh start                                   # wheel-1..5，端口 7101-7105
+build/release/src/tools/wheelctl -t 127.0.0.1:7101 ring          # 成员、环上占比、hint、修复计数
+build/release/src/tools/wheelctl -t 127.0.0.1:7101 where carts ada
+build/release/src/tools/wheel-bench --workload=A --threads=32 --duration=30 \
+  --targets=127.0.0.1:7101,127.0.0.1:7102,127.0.0.1:7103,127.0.0.1:7104,127.0.0.1:7105 &
+scripts/local_cluster.sh kill 3; sleep 10; scripts/local_cluster.sh restart 3   # 观察 errors 列
 ```
 
 在商城页面里点 **Race two writers**，会同时发出两个加购请求。存储里会留下两个 DVV sibling，购物车显示 "Merged 2 concurrent versions"，两件商品都在。

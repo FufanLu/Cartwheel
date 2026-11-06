@@ -1,7 +1,17 @@
-# M1 stack: one storage node, cart-svc, gateway, storefront.
+# Five-node CartwheelKV cluster (N=3, R=2, W=2), cart-svc, gateway, storefront.
 #   docker compose -f deploy/compose/docker-compose.yml up -d --build
 #   open http://localhost:8088
 name: cartwheel
+
+x-cluster: &cluster
+  CARTWHEEL_CLUSTER_ENABLED: "true"
+  CARTWHEEL_CLUSTER_SEEDS: wheel-1=wheel-1:7100,wheel-2=wheel-2:7100,wheel-3=wheel-3:7100,wheel-4=wheel-4:7100,wheel-5=wheel-5:7100
+  CARTWHEEL_CLUSTER_N: "3"
+  CARTWHEEL_CLUSTER_R: "2"
+  CARTWHEEL_CLUSTER_W: "2"
+  CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7100
+  CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9100
+  CARTWHEEL_STORAGE_ENGINE: lsm
 
 x-service: &service
   image: cartwheel:dev
@@ -16,13 +26,82 @@ services:
       dockerfile: deploy/docker/services.Dockerfile
     command: ["wheel-node"]
     environment:
+      <<: *cluster
       CARTWHEEL_NODE_ID: wheel-1
-      CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7100
-      CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9100
-      CARTWHEEL_STORAGE_ENGINE: lsm
+      CARTWHEEL_NODE_ADVERTISE: wheel-1:7100
       CARTWHEEL_STORAGE_DIR: /data/wheel-1
-    volumes:
-      - wheel-1-data:/data
+    volumes: ["wheel-1-data:/data"]
+    networks:
+      default:
+        aliases: [wheel]   # dns:///wheel:7100 resolves to all five nodes
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7100"]
+      interval: 2s
+      retries: 15
+
+  wheel-2:
+    <<: *service
+    command: ["wheel-node"]
+    environment:
+      <<: *cluster
+      CARTWHEEL_NODE_ID: wheel-2
+      CARTWHEEL_NODE_ADVERTISE: wheel-2:7100
+      CARTWHEEL_STORAGE_DIR: /data/wheel-2
+    volumes: ["wheel-2-data:/data"]
+    networks:
+      default:
+        aliases: [wheel]   # dns:///wheel:7100 resolves to all five nodes
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7100"]
+      interval: 2s
+      retries: 15
+
+  wheel-3:
+    <<: *service
+    command: ["wheel-node"]
+    environment:
+      <<: *cluster
+      CARTWHEEL_NODE_ID: wheel-3
+      CARTWHEEL_NODE_ADVERTISE: wheel-3:7100
+      CARTWHEEL_STORAGE_DIR: /data/wheel-3
+    volumes: ["wheel-3-data:/data"]
+    networks:
+      default:
+        aliases: [wheel]   # dns:///wheel:7100 resolves to all five nodes
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7100"]
+      interval: 2s
+      retries: 15
+
+  wheel-4:
+    <<: *service
+    command: ["wheel-node"]
+    environment:
+      <<: *cluster
+      CARTWHEEL_NODE_ID: wheel-4
+      CARTWHEEL_NODE_ADVERTISE: wheel-4:7100
+      CARTWHEEL_STORAGE_DIR: /data/wheel-4
+    volumes: ["wheel-4-data:/data"]
+    networks:
+      default:
+        aliases: [wheel]   # dns:///wheel:7100 resolves to all five nodes
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7100"]
+      interval: 2s
+      retries: 15
+
+  wheel-5:
+    <<: *service
+    command: ["wheel-node"]
+    environment:
+      <<: *cluster
+      CARTWHEEL_NODE_ID: wheel-5
+      CARTWHEEL_NODE_ADVERTISE: wheel-5:7100
+      CARTWHEEL_STORAGE_DIR: /data/wheel-5
+    volumes: ["wheel-5-data:/data"]
+    networks:
+      default:
+        aliases: [wheel]   # dns:///wheel:7100 resolves to all five nodes
     healthcheck:
       test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7100"]
       interval: 2s
@@ -33,10 +112,12 @@ services:
     command: ["cart-svc"]
     environment:
       CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7200
-      CARTWHEEL_KV_TARGET: wheel-1:7100
+      CARTWHEEL_KV_TARGET: dns:///wheel:7100
       CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9200
     depends_on:
       wheel-1: { condition: service_healthy }
+      wheel-2: { condition: service_healthy }
+      wheel-3: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7200"]
       interval: 2s
@@ -67,3 +148,7 @@ services:
 
 volumes:
   wheel-1-data:
+  wheel-2-data:
+  wheel-3-data:
+  wheel-4-data:
+  wheel-5-data:

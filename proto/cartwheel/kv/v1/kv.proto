@@ -115,7 +115,67 @@ message NodeStatsResponse {
   double put_p99_us = 9;
 }
 
+message ClusterInfoRequest {}
+
+message MemberInfo {
+  string node_id = 1;
+  string address = 2;
+  string state = 3;  // ALIVE | SUSPECT | DEAD | LEFT
+  uint64 incarnation = 4;
+  uint64 heartbeat = 5;
+  double ownership = 6;  // share of the ring this node owns as primary
+}
+
+message ClusterInfoResponse {
+  string node_id = 1;
+  uint32 n = 2;
+  uint32 r = 3;
+  uint32 w = 4;
+  repeated MemberInfo members = 5;
+  // This node's coordinator and repair counters.
+  uint64 puts = 6;
+  uint64 gets = 7;
+  uint64 forwarded = 8;
+  uint64 quorum_failures = 9;
+  uint64 throttled = 10;
+  uint64 read_repairs = 11;
+  uint64 hints_stored = 12;
+  uint64 hints_delivered = 13;
+  uint64 hints_pending = 14;
+  uint64 anti_entropy_rounds = 15;
+  uint64 anti_entropy_keys_repaired = 16;
+  // Ring tokens (position, owner) for visualisation.
+  repeated RingToken tokens = 17;
+}
+
+message RingToken {
+  fixed64 position = 1;
+  string node_id = 2;
+}
+
+message PreferenceListRequest {
+  string table = 1;
+  bytes key = 2;
+}
+
+message PreferenceListResponse {
+  fixed64 position = 1;
+  repeated string home = 2;   // N home replicas
+  repeated string live = 3;   // what a coordinator would use now (sloppy)
+}
+
+message TableLimitsRequest {
+  string table = 1;
+  double reads_per_sec = 2;   // 0 = unlimited
+  double writes_per_sec = 3;
+}
+
+message TableLimitsResponse {}
+
 service AdminService {
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc NodeStats(NodeStatsRequest) returns (NodeStatsResponse);
+  rpc ClusterInfo(ClusterInfoRequest) returns (ClusterInfoResponse);
+  rpc PreferenceList(PreferenceListRequest) returns (PreferenceListResponse);
+  rpc SetTableLimits(TableLimitsRequest) returns (TableLimitsResponse);
 }

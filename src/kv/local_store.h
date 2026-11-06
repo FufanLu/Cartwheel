@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -60,6 +61,16 @@ class LocalStore {
   // Replica-side merge of a sibling set received from a peer (M3).
   [[nodiscard]] Result<cluster::SiblingSet> Merge(std::string_view table, std::string_view key,
                                                   const cluster::SiblingSet& remote);
+
+  // Raw access for internal tables (hints) and scans (Merkle trees).
+  Status DeleteKey(std::string_view table, std::string_view key);
+  // Calls fn(table, key, encoded siblings) for every stored key; `only_table`
+  // restricts the scan to one table.
+  void ForEach(const std::function<void(std::string_view table, std::string_view key,
+                                        std::string_view value)>& fn,
+               std::string_view only_table = {}) const;
+  [[nodiscard]] static bool SplitStorageKey(std::string_view skey, std::string_view* table,
+                                            std::string_view* key);
 
   [[nodiscard]] const std::string& node_id() const noexcept { return node_id_; }
   [[nodiscard]] const storage::Engine& engine() const noexcept { return *engine_; }

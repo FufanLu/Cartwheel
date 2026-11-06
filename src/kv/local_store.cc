@@ -73,4 +73,37 @@ Result<cluster::SiblingSet> LocalStore::Merge(std::string_view table, std::strin
   return set;
 }
 
+Status LocalStore::DeleteKey(std::string_view table, std::string_view key) {
+  const std::string skey = StorageKey(table, key);
+  std::lock_guard lock(StripeFor(skey));
+  return engine_->Delete(skey);
+}
+
+bool LocalStore::SplitStorageKey(std::string_view skey, std::string_view* table,
+                                 std::string_view* key) {
+  const auto nul = skey.find('\0');
+  if (nul == std::string_view::npos) return false;
+  *table = skey.substr(0, nul);
+  *key = skey.substr(nul + 1);
+  return true;
+}
+
+void LocalStore::ForEach(
+    const std::function<void(std::string_view, std::string_view, std::string_view)>& fn,
+    std::string_view only_table) const {
+  auto it = engine_->NewIterator();
+  if (only_table.empty()) {
+    it->SeekToFirst();
+  } else {
+    it->Seek(StorageKey(only_table, ""));
+  }
+  for (; it->Valid(); it->Next()) {
+    std::string_view table;
+    std::string_view key;
+    if (!SplitStorageKey(it->key(), &table, &key)) continue;
+    if (!only_table.empty() && table != only_table) break;
+    fn(table, key, it->value());
+  }
+}
+
 }  // namespace cartwheel::kv

@@ -48,7 +48,7 @@ flowchart LR
 | M0 | Toolchain, build system, overload primitives (GCRA limiter, jittered backoff, histogram, bounded pool), CI | ✅ |
 | M1 | End-to-end skeleton: single node (DVV siblings), cart-svc (OR-Set CRDT), Beast/coroutine gateway, storefront, docker-compose | ✅ |
 | M2 | LSM storage engine: WAL, group commit, skiplist memtable, SSTables + bloom, leveled compaction; SIGKILL/power-loss/fuzz tested; 62–92% of RocksDB | ✅ |
-| M3 | Distribution: consistent hashing, gossip, quorum, vector clocks, hinted handoff, Merkle anti-entropy, deterministic simulation | |
+| M3 | Distribution: consistent hashing (64 vnodes), heartbeat gossip, N/R/W sloppy quorum, DVV siblings, hinted handoff, read repair, Merkle anti-entropy, per-table throttling; deterministic simulator with crashes/partitions; a node kill under load costs only its ~3.5 s detection window | ✅ |
 | M4 | Lightning-deal pipeline: Redis gate, Redpanda, order-worker, Postgres; gateway auth and rate limiting | |
 | M5 | Storefront and ops console (hash ring, live QPS/p99, fault injection) | |
 | M6 | Observability (Prometheus, Grafana, OpenTelemetry), k6 load tests, chaos experiments | |
@@ -81,6 +81,17 @@ scripts/e2e_smoke.sh http://127.0.0.1:8080    # idempotency, 20 concurrent adds,
 
 # or the whole stack in containers
 docker compose -f deploy/compose/docker-compose.yml up -d --build   # http://localhost:8088
+```
+
+A five-node CartwheelKV cluster on localhost (N=3, R=2, W=2):
+
+```bash
+scripts/local_cluster.sh start                                   # wheel-1..5 on :7101-7105
+build/release/src/tools/wheelctl -t 127.0.0.1:7101 ring          # members, ownership, hints, repairs
+build/release/src/tools/wheelctl -t 127.0.0.1:7101 where carts ada
+build/release/src/tools/wheel-bench --workload=A --threads=32 --duration=30 \
+  --targets=127.0.0.1:7101,127.0.0.1:7102,127.0.0.1:7103,127.0.0.1:7104,127.0.0.1:7105 &
+scripts/local_cluster.sh kill 3; sleep 10; scripts/local_cluster.sh restart 3   # watch the error column
 ```
 
 In the storefront, **Race two writers** fires two adds at the same instant: the store keeps two DVV
