@@ -1,0 +1,121 @@
+syntax = "proto3";
+
+// CartwheelKV client API. It follows the Dynamo paper's interface:
+//
+//   get(key)                 -> (versions[], context)
+//   put(key, context, value) -> context'
+//
+// `context` is opaque to clients: it encodes the vector clock of every version
+// the client has read. A put that carries the context of a read supersedes
+// exactly the versions that read returned. Two puts made from the same context
+// are concurrent, and both survive as siblings until a later put that has read
+// them both reconciles them.
+package cartwheel.kv.v1;
+
+// One causally-tracked version of a value.
+message Version {
+  bytes value = 1;
+  // Vector clock of this version, encoded the same way as `context`.
+  bytes clock = 2;
+  // Deletes are versions too, so they win against older writes during
+  // replication.
+  bool tombstone = 3;
+  // Coordinator wall time at write. Used for display and tombstone GC only,
+  // never for conflict resolution.
+  int64 written_at_ms = 4;
+}
+
+message GetRequest {
+  string table = 1;
+  bytes key = 2;
+  // Replicas that must answer. 0 means use the table default.
+  uint32 r = 3;
+}
+
+message GetResponse {
+  // Concurrent versions (siblings) after pruning dominated ones. Empty means
+  // not found. A single tombstone is reported as not found.
+  repeated Version versions = 1;
+  // Merged clock of every returned version; pass it to the next Put.
+  bytes context = 2;
+  // Replicas that answered, for observability.
+  uint32 replicas_responded = 3;
+}
+
+message PutRequest {
+  string table = 1;
+  bytes key = 2;
+  bytes value = 3;
+  // Context from a previous Get. Empty means a blind write, which becomes a
+  // sibling of whatever already exists.
+  bytes context = 4;
+  // Acks required. 0 means use the table default.
+  uint32 w = 5;
+}
+
+message PutResponse {
+  // Every version that exists after this write, including concurrent siblings
+  // the client had not read (Riak's return_body). `context` is their join, so
+  // passing it to the next Put supersedes only versions returned here.
+  repeated Version versions = 1;
+  bytes context = 2;
+  uint32 replicas_acked = 3;
+}
+
+message DeleteRequest {
+  string table = 1;
+  bytes key = 2;
+  bytes context = 3;
+  uint32 w = 4;
+}
+
+message DeleteResponse {
+  // Same contract as PutResponse. Live siblings may remain when the delete
+  // raced a concurrent write.
+  repeated Version versions = 1;
+  bytes context = 2;
+  uint32 replicas_acked = 3;
+}
+
+service KvService {
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Put(PutRequest) returns (PutResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+}
+
+// ---- Operations -------------------------------------------------------------
+
+message HealthRequest {}
+
+message HealthResponse {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_SERVING = 1;
+    STATE_DRAINING = 2;
+  }
+  State state = 1;
+  string node_id = 2;
+  string version = 3;
+  string git_sha = 4;
+  int64 uptime_ms = 5;
+}
+
+message NodeStatsRequest {}
+
+message NodeStatsResponse {
+  string node_id = 1;
+  uint64 keys = 2;
+  uint64 bytes = 3;
+  uint64 gets_total = 4;
+  uint64 puts_total = 5;
+  // Latency percentiles over the process lifetime, in microseconds.
+  double get_p50_us = 6;
+  double get_p99_us = 7;
+  double put_p50_us = 8;
+  double put_p99_us = 9;
+}
+
+service AdminService {
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc NodeStats(NodeStatsRequest) returns (NodeStatsResponse);
+}

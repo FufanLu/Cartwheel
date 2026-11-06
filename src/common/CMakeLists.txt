@@ -17,6 +17,7 @@ add_library(cartwheel_common
   histogram.cc
   logging.cc
   metrics.cc
+  signals.cc
   status.cc
   thread_pool.cc
   token_bucket.cc)

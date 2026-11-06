@@ -12,8 +12,7 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {
@@ -21,7 +20,8 @@
       "displayName": "Debug build with tests",
       "inherits": "base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed/default"
       }
     },
     {
@@ -29,7 +29,8 @@
       "displayName": "Optimized build with debug info (benchmarks, Docker)",
       "inherits": "base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed/default"
       }
     },
     {
@@ -39,7 +40,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CARTWHEEL_SANITIZER": "address+undefined",
-        "CARTWHEEL_BUILD_BENCH": "OFF"
+        "CARTWHEEL_BUILD_BENCH": "OFF",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed/asan"
       }
     },
     {
@@ -49,7 +51,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CARTWHEEL_SANITIZER": "thread",
-        "CARTWHEEL_BUILD_BENCH": "OFF"
+        "CARTWHEEL_BUILD_BENCH": "OFF",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed/tsan"
       }
     }
   ],
@@ -107,7 +110,7 @@
       "inherits": "base",
       "configurePreset": "tsan",
       "environment": {
-        "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1"
+        "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1:suppressions=${sourceDir}/tests/tsan.supp"
       }
     }
   ]

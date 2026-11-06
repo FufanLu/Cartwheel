@@ -1,2 +1,8 @@
 add_subdirectory(common)
+add_subdirectory(storage)
+add_subdirectory(cluster)
+add_subdirectory(kv)
+add_subdirectory(client)
+add_subdirectory(services)
+add_subdirectory(gateway)
 add_subdirectory(tools)

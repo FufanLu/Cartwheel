@@ -1,0 +1,177 @@
+#include "kv/kv_service.h"
+
+#include <chrono>
+#include <string>
+
+#include "common/build_info.h"
+#include "common/clock.h"
+#include "common/metrics.h"
+#include "kv/grpc_status.h"
+
+namespace cartwheel::kv {
+namespace {
+
+void FillVersions(const cluster::SiblingSet& set,
+                  google::protobuf::RepeatedPtrField<v1::Version>* out) {
+  for (const auto& s : set.siblings()) {
+    if (s.tombstone) continue;
+    auto* v = out->Add();
+    v->set_value(s.value);
+    v->set_clock(s.Clock().Encode());
+    v->set_written_at_ms(s.written_at_ms);
+  }
+}
+
+Result<cluster::VectorClock> DecodeContext(const std::string& ctx) {
+  auto clock = cluster::VectorClock::Decode(ctx);
+  if (!clock.ok()) return Status::InvalidArgument("malformed context");
+  return clock;
+}
+
+}  // namespace
+
+Status ValidateTable(std::string_view table) {
+  if (table.empty() || table.size() > kMaxTableName) {
+    return Status::InvalidArgument("table name must be 1-64 characters");
+  }
+  for (const char c : table) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+    if (!ok) return Status::InvalidArgument("table name may only contain [a-z0-9_-]");
+  }
+  return Status::Ok();
+}
+
+Status ValidateKey(std::string_view key) {
+  if (key.empty() || key.size() > kMaxKeyBytes) {
+    return Status::InvalidArgument("key must be 1-2048 bytes");
+  }
+  return Status::Ok();
+}
+
+Status ValidateValue(std::string_view value) {
+  if (value.size() > kMaxValueBytes) return Status::InvalidArgument("value exceeds 400 KiB");
+  return Status::Ok();
+}
+
+KvServiceImpl::KvServiceImpl(LocalStore* store, prometheus::Registry& registry)
+    : store_(store),
+      results_family_(prometheus::BuildCounter()
+                          .Name("cartwheel_kv_requests_total")
+                          .Help("KV requests by operation and result code")
+                          .Register(registry)) {
+  auto& latency = prometheus::BuildHistogram()
+                      .Name("cartwheel_kv_request_duration_seconds")
+                      .Help("Server-side KV request latency")
+                      .Register(registry);
+  const auto buckets = LatencyBucketsSeconds();
+  get_metrics_ = {&latency.Add({{"op", "get"}}, buckets), &results_family_};
+  put_metrics_ = {&latency.Add({{"op", "put"}}, buckets), &results_family_};
+  delete_metrics_ = {&latency.Add({{"op", "delete"}}, buckets), &results_family_};
+}
+
+template <typename Fn>
+grpc::ServerUnaryReactor* KvServiceImpl::Serve(grpc::CallbackServerContext* ctx, const OpMetrics& m,
+                                               std::string_view op, Fn&& handler) {
+  const auto start = std::chrono::steady_clock::now();
+  auto* reactor = ctx->DefaultReactor();
+  // The deadline may already have expired while the request sat in a queue.
+  // Doing the work anyway only adds load for a caller that has given up.
+  Status s = ctx->IsCancelled() ? Status::Cancelled("client cancelled") : handler();
+  const double secs =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+  m.latency->Observe(secs);
+  m.results->Add({{"op", std::string(op)}, {"code", std::string(StatusCodeName(s.code()))}})
+      .Increment();
+  reactor->Finish(ToGrpc(s));
+  return reactor;
+}
+
+Status KvServiceImpl::HandleGet(const v1::GetRequest& req, v1::GetResponse* resp) {
+  CW_RETURN_IF_ERROR(ValidateTable(req.table()));
+  CW_RETURN_IF_ERROR(ValidateKey(req.key()));
+  CW_ASSIGN_OR_RETURN(auto read, store_->Read(req.table(), req.key()));
+  FillVersions(read.siblings, resp->mutable_versions());
+  // Context is returned even for deleted keys, so a writer can supersede the tombstone.
+  if (!read.siblings.empty()) resp->set_context(read.siblings.Join().Encode());
+  resp->set_replicas_responded(1);
+  return Status::Ok();
+}
+
+Status KvServiceImpl::HandlePut(const v1::PutRequest& req, v1::PutResponse* resp) {
+  CW_RETURN_IF_ERROR(ValidateTable(req.table()));
+  CW_RETURN_IF_ERROR(ValidateKey(req.key()));
+  CW_RETURN_IF_ERROR(ValidateValue(req.value()));
+  CW_ASSIGN_OR_RETURN(auto ctx, DecodeContext(req.context()));
+  CW_ASSIGN_OR_RETURN(auto written,
+                      store_->CoordinateWrite(req.table(), req.key(), ctx, req.value(), false));
+  FillVersions(written.siblings, resp->mutable_versions());
+  resp->set_context(written.siblings.Join().Encode());
+  resp->set_replicas_acked(1);
+  return Status::Ok();
+}
+
+Status KvServiceImpl::HandleDelete(const v1::DeleteRequest& req, v1::DeleteResponse* resp) {
+  CW_RETURN_IF_ERROR(ValidateTable(req.table()));
+  CW_RETURN_IF_ERROR(ValidateKey(req.key()));
+  CW_ASSIGN_OR_RETURN(auto ctx, DecodeContext(req.context()));
+  CW_ASSIGN_OR_RETURN(auto written, store_->CoordinateWrite(req.table(), req.key(), ctx, "", true));
+  FillVersions(written.siblings, resp->mutable_versions());
+  resp->set_context(written.siblings.Join().Encode());
+  resp->set_replicas_acked(1);
+  return Status::Ok();
+}
+
+grpc::ServerUnaryReactor* KvServiceImpl::Get(grpc::CallbackServerContext* ctx,
+                                             const v1::GetRequest* req, v1::GetResponse* resp) {
+  return Serve(ctx, get_metrics_, "get", [&] { return HandleGet(*req, resp); });
+}
+
+grpc::ServerUnaryReactor* KvServiceImpl::Put(grpc::CallbackServerContext* ctx,
+                                             const v1::PutRequest* req, v1::PutResponse* resp) {
+  return Serve(ctx, put_metrics_, "put", [&] { return HandlePut(*req, resp); });
+}
+
+grpc::ServerUnaryReactor* KvServiceImpl::Delete(grpc::CallbackServerContext* ctx,
+                                                const v1::DeleteRequest* req,
+                                                v1::DeleteResponse* resp) {
+  return Serve(ctx, delete_metrics_, "delete", [&] { return HandleDelete(*req, resp); });
+}
+
+AdminServiceImpl::AdminServiceImpl(const LocalStore* store)
+    : store_(store), started_ms_(SystemClock::Default()->WallMillis()) {}
+
+grpc::ServerUnaryReactor* AdminServiceImpl::Health(grpc::CallbackServerContext* ctx,
+                                                   const v1::HealthRequest* /*req*/,
+                                                   v1::HealthResponse* resp) {
+  resp->set_state(draining_.load(std::memory_order_relaxed) ? v1::HealthResponse::STATE_DRAINING
+                                                            : v1::HealthResponse::STATE_SERVING);
+  resp->set_node_id(store_->node_id());
+  resp->set_version(std::string(kVersion));
+  resp->set_git_sha(std::string(kGitSha));
+  resp->set_uptime_ms(SystemClock::Default()->WallMillis() - started_ms_);
+  auto* reactor = ctx->DefaultReactor();
+  reactor->Finish(grpc::Status::OK);
+  return reactor;
+}
+
+grpc::ServerUnaryReactor* AdminServiceImpl::NodeStats(grpc::CallbackServerContext* ctx,
+                                                      const v1::NodeStatsRequest* /*req*/,
+                                                      v1::NodeStatsResponse* resp) {
+  const auto stats = store_->engine().Stats();
+  const auto reads = store_->ReadLatency();
+  const auto writes = store_->WriteLatency();
+  resp->set_node_id(store_->node_id());
+  resp->set_keys(stats.keys);
+  resp->set_bytes(stats.bytes);
+  resp->set_gets_total(store_->reads());
+  resp->set_puts_total(store_->writes());
+  resp->set_get_p50_us(static_cast<double>(reads.Percentile(50)) / 1e3);
+  resp->set_get_p99_us(static_cast<double>(reads.Percentile(99)) / 1e3);
+  resp->set_put_p50_us(static_cast<double>(writes.Percentile(50)) / 1e3);
+  resp->set_put_p99_us(static_cast<double>(writes.Percentile(99)) / 1e3);
+  auto* reactor = ctx->DefaultReactor();
+  reactor->Finish(grpc::Status::OK);
+  return reactor;
+}
+
+}  // namespace cartwheel::kv

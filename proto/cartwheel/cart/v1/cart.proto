@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+// Shopping cart service. Carts live in CartwheelKV, stored as an OR-Set CRDT
+// (see src/services/cart/or_set.h). Concurrent edits from two devices, or
+// from two replicas during a partition, merge without losing an add. A remove
+// deletes only the adds it has observed, so removed items never come back.
+package cartwheel.cart.v1;
+
+message CartItem {
+  string sku = 1;
+  uint32 quantity = 2;
+  // Unit price at the time the item was added, in cents.
+  int64 unit_price_cents = 3;
+  string title = 4;
+}
+
+message Cart {
+  string user_id = 1;
+  repeated CartItem items = 2;
+  int64 total_cents = 3;
+  // Number of concurrent versions merged to produce this view. More than 1
+  // means the cart was edited concurrently and the CRDT reconciled it.
+  uint32 merged_siblings = 4;
+}
+
+message GetCartRequest {
+  string user_id = 1;
+}
+
+message AddItemRequest {
+  string user_id = 1;
+  CartItem item = 2;
+  // Client-generated key that makes retries safe: the same key applied twice
+  // adds the item once.
+  string idempotency_key = 3;
+}
+
+message RemoveItemRequest {
+  string user_id = 1;
+  string sku = 2;
+}
+
+message ClearCartRequest {
+  string user_id = 1;
+}
+
+service CartService {
+  rpc GetCart(GetCartRequest) returns (Cart);
+  rpc AddItem(AddItemRequest) returns (Cart);
+  rpc RemoveItem(RemoveItemRequest) returns (Cart);
+  rpc ClearCart(ClearCartRequest) returns (Cart);
+}

@@ -23,8 +23,14 @@ enough that generated stubs and the callback API we use behave differently.
   `dev`, `release` (RelWithDebInfo), `asan` (Address + UB sanitizers), and `tsan`.
   CI runs these presets as they are, so "works on my machine" and "works in CI"
   are the same command.
-- All presets share one `vcpkg_installed/` tree. Sanitizer flags apply only to
-  first-party code, so the dependencies are built once.
+- Each dependency flavour has its own install tree. `dev` and `release` share
+  `vcpkg_installed/default`, while `asan` and `tsan` use the sanitized overlay
+  triplets in `triplets/`, each in its own tree. Sanitized code must link
+  sanitized dependencies, because protobuf and abseil change their class
+  layout under ASan and TSan. The trees must stay separate: in manifest mode,
+  vcpkg treats an install root as wholly owned by a single install plan, and
+  sharing one root across triplets made it delete the other triplet's
+  packages.
 - The top-level `CMakeLists.txt` finds the vcpkg toolchain from `$VCPKG_ROOT`
   first, then `~/vcpkg`, so the presets need no machine-specific paths.
 - Docker builds start from `deploy/docker/builder.Dockerfile`. That image keeps

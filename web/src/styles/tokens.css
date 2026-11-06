@@ -1,0 +1,53 @@
+/* Cartwheel world: the engineering computation pad.
+   Two inks that never mix: graphite for system data, red pencil for what the
+   visitor did or owns right now. */
+:root {
+  /* paper */
+  --paper: #e3eed8;
+  --paper-deep: #d5e5c6;
+  --paper-edge: #c3d8b2;
+  --grid-fine: rgb(64 112 74 / 0.13);
+  --grid-major: rgb(64 112 74 / 0.26);
+  --rule: #86a98c;
+  --rule-strong: #4f7357;
+
+  /* graphite ink (system data) */
+  --ink: #1d2922;
+  --ink-2: #3f5145;
+  --ink-3: #4f6155;
+  --pencil: #7d8e81; /* pending, not yet inked: decorative and large text only */
+
+  /* red pencil (visitor-owned state) */
+  --red: #a8241c;
+  --red-ink: #8f1d16;
+  --red-wash: rgb(168 36 28 / 0.09);
+  --red-line: rgb(168 36 28 / 0.55);
+
+  /* translucent paper for the sheet and hovered rows, so the grid shows through */
+  --paper-sheet: rgb(227 238 216 / 0.55);
+  --paper-hover: rgb(213 229 198 / 0.6);
+
+  /* lettering */
+  --font-letter: 'B612', 'Helvetica Neue', Arial, sans-serif;
+  --font-figure: 'B612 Mono', ui-monospace, Menlo, monospace;
+
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.9375rem;
+  --fs-lg: 1.125rem;
+  --fs-xl: 1.5rem;
+  --fs-2xl: 2.25rem;
+
+  /* one rhythm: the 8px grid square */
+  --sq: 8px;
+  --s1: calc(var(--sq) * 1);
+  --s2: calc(var(--sq) * 2);
+  --s3: calc(var(--sq) * 3);
+  --s4: calc(var(--sq) * 4);
+  --s6: calc(var(--sq) * 6);
+  --s8: calc(var(--sq) * 8);
+
+  --hair: 1px;
+  --line: 1.5px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}

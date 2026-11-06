@@ -1,0 +1,62 @@
+# M1 stack: one storage node, cart-svc, gateway, storefront.
+#   docker compose -f deploy/compose/docker-compose.yml up -d --build
+#   open http://localhost:8088
+name: cartwheel
+
+x-service: &service
+  image: cartwheel:dev
+  restart: unless-stopped
+  stop_grace_period: 10s   # covers drain grace + in-flight RPC deadline
+
+services:
+  wheel-1:
+    <<: *service
+    build:
+      context: ../..
+      dockerfile: deploy/docker/services.Dockerfile
+    command: ["wheel-node"]
+    environment:
+      CARTWHEEL_NODE_ID: wheel-1
+      CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7100
+      CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9100
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7100"]
+      interval: 2s
+      retries: 15
+
+  cart-svc:
+    <<: *service
+    command: ["cart-svc"]
+    environment:
+      CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7200
+      CARTWHEEL_KV_TARGET: wheel-1:7100
+      CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9200
+    depends_on:
+      wheel-1: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7200"]
+      interval: 2s
+      retries: 15
+
+  gateway:
+    <<: *service
+    command: ["gateway"]
+    environment:
+      CARTWHEEL_SERVER_PORT: "8080"
+      CARTWHEEL_CART_TARGET: cart-svc:7200
+    ports: ["8080:8080"]
+    depends_on:
+      cart-svc: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      retries: 15
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/web.Dockerfile
+    image: cartwheel-web:dev
+    ports: ["8088:80"]
+    depends_on:
+      gateway: { condition: service_healthy }

@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+// Storage format of one cart in CartwheelKV (table "carts", key = user id).
+// Internal to cart-svc. Schema changes must stay wire-compatible, because old
+// siblings can sit in the store indefinitely.
+package cartwheel.cart.v1;
+
+// One observed "add" in the OR-Set. The tag is globally unique. When the
+// client supplies an idempotency key, the tag is derived from that key, so a
+// retried AddItem re-inserts the same tag and the merge is a no-op.
+message CartAdd {
+  string tag = 1;
+  string sku = 2;
+  uint32 quantity = 3;
+  int64 unit_price_cents = 4;
+  string title = 5;
+  int64 added_at_ms = 6;
+}
+
+message CartState {
+  repeated CartAdd adds = 1;
+  // Tags removed by RemoveItem/ClearCart. A remove deletes only the tags its
+  // writer had observed, so a concurrent add on another replica survives
+  // (add-wins), while an add the remover saw can never resurface.
+  repeated string removed_tags = 2;
+}

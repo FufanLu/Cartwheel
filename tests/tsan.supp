@@ -1,0 +1,10 @@
+# ThreadSanitizer suppressions for third-party code (dependencies are built
+# with TSan via triplets/*-tsan.cmake, so their own races become visible).
+# Every entry names the upstream function and why it is benign. Never add
+# Cartwheel code here: fix it instead.
+
+# civetweb (prometheus-cpp's HTTP exposer) signals its worker threads to stop
+# through a plain `int` stop flag written in mg_stop() and polled in
+# worker_thread()/master_thread() without atomics. The workers only observe
+# the flag eventually; shutdown joins them before freeing the context.
+race:civetweb.c

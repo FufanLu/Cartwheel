@@ -23,6 +23,25 @@ jobs:
           pip install --quiet clang-format==23.1.5
           git ls-files '*.h' '*.cc' | xargs clang-format --dry-run --Werror
 
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+
   build:
     name: ${{ matrix.os }} / ${{ matrix.preset }}
     runs-on: ${{ matrix.os }}
@@ -59,10 +78,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .vcpkg-bincache
-          # Sanitizers are not applied to vcpkg ports, so every preset on an OS
-          # shares the same prebuilt packages.
-          key: vcpkg-${{ matrix.os }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-${{ matrix.os }}-
+          # asan/tsan presets build dependencies with their own sanitized
+          # triplets (triplets/), so each preset has its own package set.
+          key: vcpkg-${{ matrix.os }}-${{ matrix.preset }}-${{ hashFiles('vcpkg.json', 'triplets/*.cmake') }}
+          restore-keys: vcpkg-${{ matrix.os }}-${{ matrix.preset }}-
 
       - name: Bootstrap vcpkg
         run: |

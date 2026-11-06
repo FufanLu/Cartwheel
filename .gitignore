@@ -19,3 +19,7 @@ node_modules/
 .idea/
 .DS_Store
 *.swp
+
+# Impeccable review captures (regenerated each review round)
+/.impeccable/review/
+/.impeccable/mocks/

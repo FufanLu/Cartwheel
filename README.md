@@ -19,6 +19,10 @@ both models live in the same system:
 | Shopping cart | Always writable, even during partitions (AP) | CartwheelKV: N/R/W quorum, sloppy quorum + hinted handoff, vector clocks, OR-Set CRDT merge |
 | Deal inventory | Never oversell (CP) | Redis Lua atomic gate → Redpanda (Kafka) to absorb the spike → idempotent Postgres writes |
 
+![Storefront: a tally merged from two concurrent writers](docs/images/storefront-desktop.webp)
+
+*The storefront after another writer changed the cart: the bracketed line came from the other window, nothing was overwritten. Real capture against the running stack.*
+
 ## Architecture
 
 ```mermaid
@@ -42,7 +46,7 @@ flowchart LR
 | Milestone | Scope | State |
 |---|---|---|
 | M0 | Toolchain, build system, overload primitives (GCRA limiter, jittered backoff, histogram, bounded pool), CI | ✅ |
-| M1 | End-to-end skeleton: single node, gateway, cart-svc, minimal UI, docker-compose | ⏳ |
+| M1 | End-to-end skeleton: single node (DVV siblings), cart-svc (OR-Set CRDT), Beast/coroutine gateway, storefront, docker-compose | ✅ |
 | M2 | LSM storage engine (WAL, skiplist memtable, SSTables, bloom filters, compaction) | |
 | M3 | Distribution: consistent hashing, gossip, quorum, vector clocks, hinted handoff, Merkle anti-entropy, deterministic simulation | |
 | M4 | Lightning-deal pipeline: Redis gate, Redpanda, order-worker, Postgres; gateway auth and rate limiting | |
@@ -64,6 +68,23 @@ cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan   # Th
 ```
 
 Presets: `dev` (Debug), `release` (RelWithDebInfo), `asan` (Address + UB), `tsan` (Thread).
+
+## Run it
+
+```bash
+# local binaries (after the build above)
+build/dev/src/kv/wheel-node &
+CARTWHEEL_KV_TARGET=127.0.0.1:7100 build/dev/src/services/cart/cart-svc &
+CARTWHEEL_CART_TARGET=127.0.0.1:7200 build/dev/src/gateway/gateway &
+(cd web && pnpm install && pnpm dev)          # http://localhost:5173
+scripts/e2e_smoke.sh http://127.0.0.1:8080    # idempotency, 20 concurrent adds, no resurrection
+
+# or the whole stack in containers
+docker compose -f deploy/compose/docker-compose.yml up -d --build   # http://localhost:8088
+```
+
+In the storefront, **Race two writers** fires two adds at the same instant: the store keeps two DVV
+siblings, and the cart shows "Merged 2 concurrent versions" with both items kept.
 
 ## Documentation
 

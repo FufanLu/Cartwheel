@@ -1,0 +1,88 @@
+@import '@fontsource/b612/400.css';
+@import '@fontsource/b612/700.css';
+@import '@fontsource/b612-mono/400.css';
+@import '@fontsource/b612-mono/700.css';
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-letter);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  color: var(--ink);
+  background-color: var(--paper);
+  /* computation-pad grid: fine squares every 8px, a heavier line every 5 */
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid-fine) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-fine) 1px, transparent 1px);
+  background-size:
+    calc(var(--sq) * 5) calc(var(--sq) * 5),
+    calc(var(--sq) * 5) calc(var(--sq) * 5),
+    var(--sq) var(--sq),
+    var(--sq) var(--sq);
+  background-position: -1px -1px;
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--red-wash);
+  color: var(--red-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--ink);
+  text-decoration-color: var(--red-line);
+  text-underline-offset: 3px;
+}
+
+input {
+  font: inherit;
+  caret-color: var(--red);
+}
+
+* {
+  scrollbar-color: var(--rule) var(--paper-deep);
+  scrollbar-width: thin;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

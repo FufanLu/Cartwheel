@@ -13,6 +13,10 @@
 | 购物车 | 永远可写，分区期间也一样（AP） | CartwheelKV：N/R/W quorum、sloppy quorum + hinted handoff、vector clock、OR-Set CRDT 合并 |
 | 秒杀库存 | 绝不超卖（CP） | Redis Lua 原子闸门 → Redpanda（Kafka）削峰 → 幂等写入 Postgres |
 
+![商城页面：两个并发写入合并后的购物车](docs/images/storefront-desktop.webp)
+
+*另一个窗口改过购物车之后的商城页面：带括号标记的那一行来自另一个窗口，没有任何写入被覆盖。截图来自真实运行的服务。*
+
 ## 架构
 
 ```mermaid
@@ -36,7 +40,7 @@ flowchart LR
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M0 | 工具链、构建系统、过载保护原语（GCRA 限流、jitter 退避、直方图、有界线程池）、CI | ✅ |
-| M1 | 端到端骨架：单节点、网关、cart-svc、最简 UI、docker-compose | ⏳ |
+| M1 | 端到端骨架：单节点（DVV siblings）、cart-svc（OR-Set CRDT）、Beast + 协程网关、商城前端、docker-compose | ✅ |
 | M2 | LSM 存储引擎（WAL、skiplist memtable、SSTable、布隆过滤器、compaction） | |
 | M3 | 分布式：一致性哈希、gossip、quorum、vector clock、hinted handoff、Merkle 反熵、确定性仿真 | |
 | M4 | 秒杀链路：Redis 闸门、Redpanda、order-worker、Postgres；网关鉴权与限流 | |
@@ -57,6 +61,22 @@ cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan   # Th
 ```
 
 Preset：`dev`（Debug）、`release`（RelWithDebInfo）、`asan`（Address + UB）、`tsan`（Thread）。
+
+## 运行
+
+```bash
+# 本地二进制（先按上面的步骤构建）
+build/dev/src/kv/wheel-node &
+CARTWHEEL_KV_TARGET=127.0.0.1:7100 build/dev/src/services/cart/cart-svc &
+CARTWHEEL_CART_TARGET=127.0.0.1:7200 build/dev/src/gateway/gateway &
+(cd web && pnpm install && pnpm dev)          # http://localhost:5173
+scripts/e2e_smoke.sh http://127.0.0.1:8080    # 验证幂等、20 个并发加购、删除的商品不会复活
+
+# 或者用容器跑整套服务
+docker compose -f deploy/compose/docker-compose.yml up -d --build   # http://localhost:8088
+```
+
+在商城页面里点 **Race two writers**，会同时发出两个加购请求。存储里会留下两个 DVV sibling，购物车显示 "Merged 2 concurrent versions"，两件商品都在。
 
 ## 文档
 
