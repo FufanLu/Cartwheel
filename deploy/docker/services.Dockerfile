@@ -27,7 +27,8 @@ FROM ubuntu:24.04 AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --uid 10001 --no-create-home cartwheel
+    && useradd --system --uid 10001 --no-create-home cartwheel \
+    && mkdir -p /data && chown cartwheel /data
 COPY --from=build /out/ /usr/local/bin/
 USER cartwheel
 # Structured logs for aggregation; override per service in compose.

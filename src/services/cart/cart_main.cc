@@ -66,6 +66,9 @@ int main(int argc, char** argv) {
 #endif
   grpc::ServerBuilder builder;
   int port = 0;
+  // gRPC sets SO_REUSEPORT by default: a second instance would silently share
+  // the port and split traffic. Fail fast instead.
+  builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
   builder.AddListeningPort(listen, grpc::InsecureServerCredentials(), &port);
   builder.RegisterService(&service);
   auto server = builder.BuildAndStart();

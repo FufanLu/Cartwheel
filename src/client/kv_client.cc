@@ -23,6 +23,9 @@ struct KvClient::Impl {
       grpc::ClientContext ctx;
       ctx.set_deadline(std::chrono::system_clock::now() +
                        std::chrono::milliseconds(options.timeout_ms));
+      // While the node restarts, wait (within the deadline) for the channel to
+      // reconnect instead of failing fast with UNAVAILABLE.
+      ctx.set_wait_for_ready(true);
       Status s = kv::FromGrpc(rpc(&ctx));
       if (s.ok() || !s.retryable()) return s;
       const auto delay = backoff.NextDelayMicros();
@@ -55,6 +58,11 @@ KvClient::KvClient(KvClientOptions options) : impl_(std::make_unique<Impl>()) {
   // Retries are ours (with jitter). Disable the transparent gRPC layer so
   // attempts are not multiplied.
   args.SetInt(GRPC_ARG_ENABLE_RETRIES, 0);
+  // gRPC's default reconnect backoff starts at 1 s, so a node restart made
+  // every call fail for about a second. Reconnect quickly, cap at 2 s.
+  args.SetInt(GRPC_ARG_INITIAL_RECONNECT_BACKOFF_MS, 100);
+  args.SetInt(GRPC_ARG_MIN_RECONNECT_BACKOFF_MS, 100);
+  args.SetInt(GRPC_ARG_MAX_RECONNECT_BACKOFF_MS, 2000);
   impl_->channel =
       grpc::CreateCustomChannel(impl_->options.target, grpc::InsecureChannelCredentials(), args);
   impl_->stub = kv::v1::KvService::NewStub(impl_->channel);

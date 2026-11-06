@@ -41,7 +41,7 @@ flowchart LR
 |---|---|---|
 | M0 | 工具链、构建系统、过载保护原语（GCRA 限流、jitter 退避、直方图、有界线程池）、CI | ✅ |
 | M1 | 端到端骨架：单节点（DVV siblings）、cart-svc（OR-Set CRDT）、Beast + 协程网关、商城前端、docker-compose | ✅ |
-| M2 | LSM 存储引擎（WAL、skiplist memtable、SSTable、布隆过滤器、compaction） | |
+| M2 | LSM 存储引擎：WAL、group commit、skiplist memtable、SSTable + 布隆过滤器、分层 compaction；通过 SIGKILL、断电、fuzz 测试；吞吐达到 RocksDB 的 62–92% | ✅ |
 | M3 | 分布式：一致性哈希、gossip、quorum、vector clock、hinted handoff、Merkle 反熵、确定性仿真 | |
 | M4 | 秒杀链路：Redis 闸门、Redpanda、order-worker、Postgres；网关鉴权与限流 | |
 | M5 | 商城前端与运维控制台（哈希环、实时 QPS/p99、故障注入） | |

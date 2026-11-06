@@ -33,3 +33,11 @@ cartwheel_add_test(gateway_test
   SOURCES gateway/router_test.cc
   LIBS cartwheel::gateway
   LABELS unit)
+
+cartwheel_add_test(storage_test
+  SOURCES
+    storage/db_test.cc
+    storage/table_test.cc
+    storage/wal_test.cc
+  LIBS cartwheel::storage
+  LABELS unit)

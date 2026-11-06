@@ -12,3 +12,18 @@ target_link_libraries(cw-trace PRIVATE cartwheel::cart cartwheel::kv)
 add_executable(wheelctl wheelctl.cc)
 cartwheel_target_defaults(wheelctl)
 target_link_libraries(wheelctl PRIVATE cartwheel::kv CLI11::CLI11)
+
+# lsm-bench: db_bench-style workloads; RocksDB reference with -DCARTWHEEL_BENCH_ROCKSDB=ON.
+add_executable(lsm-bench lsm_bench.cc)
+cartwheel_target_defaults(lsm-bench)
+target_link_libraries(lsm-bench PRIVATE cartwheel::storage CLI11::CLI11)
+if(CARTWHEEL_BENCH_ROCKSDB)
+  find_package(RocksDB CONFIG REQUIRED)
+  target_link_libraries(lsm-bench PRIVATE RocksDB::rocksdb)
+  target_compile_definitions(lsm-bench PRIVATE CARTWHEEL_HAVE_ROCKSDB=1)
+endif()
+
+# lsm-tour: byte-level traces of the LSM engine for docs/illustrated/02.
+add_executable(lsm-tour lsm_tour.cc)
+cartwheel_target_defaults(lsm-tour)
+target_link_libraries(lsm-tour PRIVATE cartwheel::storage)

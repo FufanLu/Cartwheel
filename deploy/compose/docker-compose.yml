@@ -19,6 +19,10 @@ services:
       CARTWHEEL_NODE_ID: wheel-1
       CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7100
       CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9100
+      CARTWHEEL_STORAGE_ENGINE: lsm
+      CARTWHEEL_STORAGE_DIR: /data/wheel-1
+    volumes:
+      - wheel-1-data:/data
     healthcheck:
       test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/7100"]
       interval: 2s
@@ -60,3 +64,6 @@ services:
     ports: ["8088:80"]
     depends_on:
       gateway: { condition: service_healthy }
+
+volumes:
+  wheel-1-data:

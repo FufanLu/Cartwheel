@@ -27,6 +27,7 @@
 #include "kv/kv_service.h"
 #include "kv/local_store.h"
 #include "storage/engine.h"
+#include "storage/lsm/db.h"
 
 int main(int argc, char** argv) {
   using namespace cartwheel;
@@ -69,7 +70,28 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  kv::LocalStore store(node_id, storage::NewMemEngine());
+  // storage.engine = "lsm" (default, durable) | "mem" (tests, demos)
+  std::unique_ptr<storage::Engine> engine;
+  const std::string engine_name = cfg.GetString("storage.engine", "lsm");
+  if (engine_name == "mem") {
+    engine = storage::NewMemEngine();
+  } else if (engine_name == "lsm") {
+    storage::lsm::Options lsm;
+    lsm.write_buffer_size = static_cast<size_t>(cfg.GetInt("storage.write_buffer_bytes", 4 << 20));
+    lsm.block_cache_bytes = static_cast<size_t>(cfg.GetInt("storage.block_cache_bytes", 64 << 20));
+    const std::string dir = cfg.GetString("storage.dir", "./data/" + node_id);
+    auto opened = storage::lsm::NewLsmEngine(lsm, dir);
+    if (!opened.ok()) {
+      CW_LOG_ERROR("cannot open storage at {}: {}", dir, opened.status().ToString());
+      return 1;
+    }
+    engine = std::move(opened).value();
+    CW_LOG_INFO("storage: lsm at {}", dir);
+  } else {
+    CW_LOG_ERROR("unknown storage.engine '{}' (expected lsm or mem)", engine_name);
+    return 2;
+  }
+  kv::LocalStore store(node_id, std::move(engine));
   kv::KvServiceImpl kv_service(&store, *registry);
   kv::AdminServiceImpl admin_service(&store);
 
@@ -79,6 +101,9 @@ int main(int argc, char** argv) {
 #endif
   grpc::ServerBuilder builder;
   int bound_port = 0;
+  // gRPC sets SO_REUSEPORT by default: a second instance would silently share
+  // the port and split traffic. Fail fast instead.
+  builder.AddChannelArgument(GRPC_ARG_ALLOW_REUSEPORT, 0);
   builder.AddListeningPort(listen, grpc::InsecureServerCredentials(), &bound_port);
   builder.RegisterService(&kv_service);
   builder.RegisterService(&admin_service);

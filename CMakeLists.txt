@@ -10,6 +10,13 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 endif()
 
+# Optional benchmark-only dependency: -DCARTWHEEL_BENCH_ROCKSDB=ON pulls RocksDB
+# through the vcpkg manifest feature, as the reference point for lsm-bench.
+option(CARTWHEEL_BENCH_ROCKSDB "Build lsm-bench with RocksDB as a reference engine" OFF)
+if(CARTWHEEL_BENCH_ROCKSDB)
+  list(APPEND VCPKG_MANIFEST_FEATURES "bench-rocksdb")
+endif()
+
 # Sanitizer builds link against dependencies built with the same sanitizer
 # (see triplets/sanitizer-common.cmake): pick <arch>-<os>-<asan|tsan>.
 set(VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_SOURCE_DIR}/triplets" CACHE STRING "")
