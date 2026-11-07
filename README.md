@@ -55,8 +55,8 @@ flowchart LR
 | M3 | Distribution: consistent hashing (64 vnodes), heartbeat gossip, N/R/W sloppy quorum, DVV siblings, hinted handoff, read repair, Merkle anti-entropy, per-table throttling; deterministic simulator with crashes/partitions; a node kill under load costs only its ~3.5 s detection window | ✅ |
 | M4 | Lightning deals: atomic Redis Lua gate → idempotent Kafka/Redpanda log → batched Postgres commits with constraints of last resort; holds never released (redrive + sweeper); JWT, per-user GCRA, WebSocket push. 10k buyers / 1k units: sold out in 0.28 s, committed in 0.73 s, no oversell through worker kills and broker freezes | ✅ |
 | M5 | Deal sheet (server-clock countdowns, live stock, claim, WebSocket-confirmed orders) and an ops console: per-node ring tracks, live ops/s and windowed p99, hints and repairs, one-click node isolation (a simulated partition), deal reset | ✅ |
-| M6 | Observability (Prometheus, Grafana, OpenTelemetry), k6 load tests, chaos experiments | |
-| M7 | Helm/kind deployment, PRFAQ, runbooks | |
+| M6 | Observability: OpenTelemetry traces across every service (W3C traceparent over HTTP, gRPC and Kafka) into Jaeger; Prometheus metrics incl. cluster membership and hints; Grafana dashboard; symptom-based alerts with runbooks; k6 cart soak with a mid-run partition (0.04% errors) and deal spike (2,505 req/s, no oversell); [benchmarks](docs/benchmarks.md) | ✅ |
+| M7 | Helm chart (wheel-node as a StatefulSet with per-pod DNS, PVCs and a PodDisruptionBudget), kind script, architecture, PRFAQ, runbooks | ✅ |
 
 ## Build
 
@@ -83,9 +83,16 @@ CARTWHEEL_CART_TARGET=127.0.0.1:7200 build/dev/src/gateway/gateway &
 (cd web && pnpm install && pnpm dev)          # http://localhost:5173
 scripts/e2e_smoke.sh http://127.0.0.1:8080    # idempotency, 20 concurrent adds, no resurrection
 
-# or the whole stack in containers
+# or the whole stack in containers (Grafana :3000/d/cartwheel, Jaeger :16686)
 docker compose -f deploy/compose/docker-compose.yml up -d --build   # http://localhost:8088
+
+# or on Kubernetes (kind + the Helm chart in deploy/helm/cartwheel)
+scripts/kind_up.sh                                                   # http://localhost:8088
 ```
+
+The container paths (compose, kind) are validated with `docker compose config`, `helm lint` and
+`helm template`. All measured results in the docs come from the native setup above; the images
+have not yet been built and run end to end on the author's machine.
 
 A five-node CartwheelKV cluster on localhost (N=3, R=2, W=2):
 
@@ -121,6 +128,10 @@ siblings, and the cart shows "Merged 2 concurrent versions" with both items kept
 
 ## Documentation
 
+- [Architecture](docs/ARCHITECTURE.md): components, data paths, and where each guarantee comes from.
+- [PRFAQ](docs/PRFAQ.md): the product framing, working backwards from the customer.
 - [Illustrated guide](docs/illustrated/README.md): walks one request at a time through the
   system, using traces captured from real runs.
+- [Benchmarks and failure experiments](docs/benchmarks.md)
 - [Architecture decision records](docs/adr/)
+- [Runbooks](docs/runbooks/README.md): one per alert.

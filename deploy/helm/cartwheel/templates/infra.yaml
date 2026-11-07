@@ -1,0 +1,56 @@
+{{- if .Values.infra.enabled }}
+# Demo-grade, single-replica dependencies. Replace with managed services in
+# production (and set infra.enabled=false).
+{{- range $d := list
+      (dict "name" "postgres" "image" "postgres:17" "port" 5432 "path" "/var/lib/postgresql/data")
+      (dict "name" "redis" "image" "redis:7-alpine" "port" 6379 "path" "/data")
+      (dict "name" "redpanda" "image" "redpandadata/redpanda:v24.2.7" "port" 9092 "path" "/var/lib/redpanda/data") }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $d.name }}
+spec:
+  selector: { app: {{ $d.name }} }
+  ports:
+    - { port: {{ $d.port }} }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $d.name }}
+spec:
+  serviceName: {{ $d.name }}
+  replicas: 1
+  selector:
+    matchLabels: { app: {{ $d.name }} }
+  template:
+    metadata:
+      labels: { app: {{ $d.name }} }
+    spec:
+      containers:
+        - name: {{ $d.name }}
+          image: {{ $d.image }}
+          {{- if eq $d.name "postgres" }}
+          env:
+            - { name: POSTGRES_USER, value: cartwheel }
+            - { name: POSTGRES_PASSWORD, value: cartwheel }
+            - { name: POSTGRES_DB, value: cartwheel }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          {{- else if eq $d.name "redis" }}
+          args: ["--appendonly", "yes", "--appendfsync", "everysec"]
+          {{- else }}
+          args: ["redpanda", "start", "--mode=dev-container", "--smp=1", "--memory=1G",
+                 "--kafka-addr=PLAINTEXT://0.0.0.0:9092", "--advertise-kafka-addr=PLAINTEXT://redpanda:9092"]
+          {{- end }}
+          ports:
+            - { containerPort: {{ $d.port }} }
+          volumeMounts:
+            - { name: data, mountPath: {{ $d.path }} }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 1Gi } }
+{{- end }}
+{{- end }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cartwheel
+description: Dynamo-style KV cluster (CartwheelKV) with cart, lightning-deal and gateway services
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

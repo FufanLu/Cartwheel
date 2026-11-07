@@ -45,8 +45,8 @@ flowchart LR
 | M3 | 分布式：一致性哈希（64 vnode）、心跳 gossip、N/R/W sloppy quorum、DVV siblings、hinted handoff、read repair、Merkle 反熵、按表限流；带宕机和分区的确定性仿真；压测中 kill 一个节点，只在约 3.5 秒的故障检测窗口内报错 | ✅ |
 | M4 | 秒杀链路：Redis Lua 原子闸门 → 幂等 Kafka/Redpanda 日志 → Postgres 批量提交（带兜底约束）；占位永不释放（重发队列 + 清扫器）；JWT、按用户 GCRA 限流、WebSocket 推送。1 万人抢 1000 件：0.28 秒卖光、0.73 秒全部落库，kill worker、冻结 broker 都不超卖 | ✅ |
 | M5 | 秒杀单（按服务器时钟倒计时、实时库存、抢购、WebSocket 推送确认订单）和运维控制台：每节点一条环形轨道、实时 ops/s 与窗口 p99、hint 与修复计数、一键隔离节点（模拟网络分区）、重置秒杀 | ✅ |
-| M6 | 可观测性（Prometheus、Grafana、OpenTelemetry）、k6 压测、混沌实验 | |
-| M7 | Helm/kind 部署、PRFAQ、runbook | |
+| M6 | 可观测性：OpenTelemetry 链路追踪覆盖所有服务（W3C traceparent 走 HTTP、gRPC、Kafka）进 Jaeger；Prometheus 指标（含集群成员与 hint）；Grafana 仪表盘；按症状告警并附 runbook；k6 购物车 soak 中途分区（错误率 0.04%）和秒杀尖峰（2505 req/s，无超卖）；[基准数据](docs/benchmarks.md) | ✅ |
+| M7 | Helm chart（wheel-node 用 StatefulSet，带每 Pod DNS、PVC 和 PodDisruptionBudget）、kind 脚本、架构文档、PRFAQ、runbook | ✅ |
 
 ## 构建
 
@@ -72,9 +72,14 @@ CARTWHEEL_CART_TARGET=127.0.0.1:7200 build/dev/src/gateway/gateway &
 (cd web && pnpm install && pnpm dev)          # http://localhost:5173
 scripts/e2e_smoke.sh http://127.0.0.1:8080    # 验证幂等、20 个并发加购、删除的商品不会复活
 
-# 或者用容器跑整套服务
+# 或者用容器跑整套服务（Grafana :3000/d/cartwheel，Jaeger :16686）
 docker compose -f deploy/compose/docker-compose.yml up -d --build   # http://localhost:8088
+
+# 或者跑在 Kubernetes 上（kind + deploy/helm/cartwheel 里的 Helm chart）
+scripts/kind_up.sh                                                   # http://localhost:8088
 ```
+
+容器方式（compose、kind）目前通过 `docker compose config`、`helm lint`、`helm template` 校验过。文档里所有实测数据都来自上面的本机原生部署；镜像还没有在作者机器上完整构建并端到端跑通过。
 
 在本机起一个 5 节点的 CartwheelKV 集群（N=3, R=2, W=2）：
 
@@ -106,5 +111,9 @@ ctest --preset dev -L infra                                # 连真实服务的�
 
 ## 文档
 
+- [架构](docs/ARCHITECTURE.md)：组件、数据路径，以及每条保证从哪里来（英文）。
+- [PRFAQ](docs/PRFAQ.md)：从客户出发的产品说明（英文）。
 - [图解](docs/illustrated/README.md)：每次跟着一个请求走完整个系统，所有数据都来自真实运行（英文）。
+- [基准与故障实验](docs/benchmarks.md)（英文）
 - [架构决策记录 ADR](docs/adr/)（英文）
+- [Runbook](docs/runbooks/README.md)：每条告警一份（英文）。

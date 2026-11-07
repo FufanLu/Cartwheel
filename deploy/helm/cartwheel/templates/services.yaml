@@ -1,0 +1,160 @@
+{{- $root := . -}}
+{{- range $svc := list
+      (dict "name" "cart-svc" "port" 7200 "metrics" 9200 "replicas" .Values.cart.replicas "deal" false)
+      (dict "name" "deal-svc" "port" 7300 "metrics" 9300 "replicas" .Values.deal.replicas "deal" true) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc.name }}
+spec:
+  selector: { app: {{ $svc.name }} }
+  ports:
+    - { name: grpc, port: {{ $svc.port }} }
+    - { name: metrics, port: {{ $svc.metrics }} }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svc.name }}
+spec:
+  replicas: {{ $svc.replicas }}
+  selector:
+    matchLabels: { app: {{ $svc.name }} }
+  template:
+    metadata:
+      labels: { app: {{ $svc.name }} }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $svc.metrics | quote }}
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: {{ $svc.name }}
+          image: {{ include "cartwheel.image" $root }}
+          command: [{{ $svc.name | quote }}]
+          env:
+            {{- include "cartwheel.common.env" $root | nindent 12 }}
+            - { name: CARTWHEEL_SERVER_LISTEN, value: "0.0.0.0:{{ $svc.port }}" }
+            - { name: CARTWHEEL_METRICS_LISTEN, value: "0.0.0.0:{{ $svc.metrics }}" }
+            {{- if $svc.deal }}
+            {{- include "cartwheel.deal.env" $root | nindent 12 }}
+            {{- else }}
+            - { name: CARTWHEEL_KV_TARGET, value: "dns:///wheel-node:7100" }
+            {{- end }}
+          ports:
+            - { name: grpc, containerPort: {{ $svc.port }} }
+          readinessProbe:
+            grpc: { port: {{ $svc.port }} }
+            periodSeconds: 2
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-worker
+spec:
+  replicas: {{ .Values.orderWorker.replicas }}
+  selector:
+    matchLabels: { app: order-worker }
+  template:
+    metadata:
+      labels: { app: order-worker }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9400"
+    spec:
+      terminationGracePeriodSeconds: 20   # finish the batch, commit, leave the group
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: order-worker
+          image: {{ include "cartwheel.image" . }}
+          command: ["order-worker"]
+          env:
+            {{- include "cartwheel.common.env" . | nindent 12 }}
+            {{- include "cartwheel.deal.env" . | nindent 12 }}
+            - { name: CARTWHEEL_METRICS_LISTEN, value: "0.0.0.0:9400" }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gateway
+type: Opaque
+stringData:
+  jwt-secret: {{ .Values.gateway.jwtSecret | quote }}
+  admin-token: {{ .Values.gateway.adminToken | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  selector: { app: gateway }
+  ports:
+    - { name: http, port: 8080 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+spec:
+  replicas: {{ .Values.gateway.replicas }}
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: gateway
+          image: {{ include "cartwheel.image" . }}
+          command: ["gateway"]
+          env:
+            {{- include "cartwheel.common.env" . | nindent 12 }}
+            - { name: CARTWHEEL_SERVER_PORT, value: "8080" }
+            - { name: CARTWHEEL_CART_TARGET, value: "dns:///cart-svc:7200" }
+            - { name: CARTWHEEL_DEAL_TARGET, value: "dns:///deal-svc:7300" }
+            - { name: CARTWHEEL_NOTIFY_REDIS_URL, value: {{ .Values.infra.redisUrl | quote }} }
+            - name: CARTWHEEL_OPS_KV_NODES
+              value: "{{- range $i := until (int .Values.kv.replicas) }}{{ if $i }},{{ end }}wheel-node-{{ $i }}=wheel-node-{{ $i }}.wheel-node:7100{{ end }}"
+            - name: CARTWHEEL_AUTH_JWT_SECRET
+              valueFrom: { secretKeyRef: { name: gateway, key: jwt-secret } }
+            - name: CARTWHEEL_AUTH_ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: gateway, key: admin-token } }
+          ports:
+            - { name: http, containerPort: 8080 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  type: NodePort
+  selector: { app: web }
+  ports:
+    - { name: http, port: 80, nodePort: 30080 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: web }
+  template:
+    metadata:
+      labels: { app: web }
+    spec:
+      containers:
+        - name: web
+          image: {{ .Values.webImage.repository }}:{{ .Values.webImage.tag }}
+          ports:
+            - { name: http, containerPort: 80 }

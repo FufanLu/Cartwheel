@@ -1,0 +1,41 @@
+image:
+  repository: cartwheel
+  tag: dev
+  pullPolicy: IfNotPresent
+webImage:
+  repository: cartwheel-web
+  tag: dev
+
+kv:
+  replicas: 5          # StatefulSet: stable names wheel-node-0..N-1 are the node ids
+  # N/R/W. (Not n/r/w: YAML 1.1 reads a bare `n` key as the boolean false.)
+  replication: 3
+  readQuorum: 2
+  writeQuorum: 2
+  storage: 1Gi
+  faultInjection: false  # true lets the ops console isolate a node (demo clusters only)
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits: { memory: 1Gi }
+
+cart:
+  replicas: 2
+deal:
+  replicas: 1
+orderWorker:
+  replicas: 2          # at most the topic's partitions (12)
+gateway:
+  replicas: 2
+  adminToken: ""       # empty disables the admin endpoints
+  jwtSecret: "change-me"
+
+# Single-replica Postgres, Redis and Redpanda for kind and demos. In
+# production, point the services at managed instances and disable these.
+infra:
+  enabled: true
+  postgresUrl: postgresql://cartwheel:cartwheel@postgres:5432/cartwheel
+  redisUrl: redis://redis:6379
+  kafkaBrokers: redpanda:9092
+
+tracing:
+  otlpEndpoint: ""     # e.g. jaeger-collector.observability:4317
