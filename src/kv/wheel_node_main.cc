@@ -24,6 +24,8 @@
 #include "common/logging.h"
 #include "common/metrics.h"
 #include "common/signals.h"
+#include "common/tracing.h"
+#include "kv/cluster_metrics.h"
 #include "kv/cluster_node.h"
 #include "kv/kv_service.h"
 #include "kv/local_store.h"
@@ -57,6 +59,8 @@ int main(int argc, char** argv) {
   InitLogging({.service = "wheel-node",
                .level = cfg.GetString("log.level", "info"),
                .json = cfg.GetBool("log.json", false)});
+  // tracing.otlp_endpoint = "host:4317" turns on OpenTelemetry export.
+  tracing::Init("wheel-node", cfg.GetString("tracing.otlp_endpoint", ""));
 
   const std::string node_id = cfg.GetString("node.id", "wheel-1");
   const std::string listen = cfg.GetString("server.listen", "0.0.0.0:7100");
@@ -155,6 +159,10 @@ int main(int argc, char** argv) {
     peer_service = std::make_unique<kv::PeerServiceImpl>(handler);
   }
 
+  std::unique_ptr<kv::ClusterMetrics> cluster_metrics;
+  if (cluster_node) {
+    cluster_metrics = std::make_unique<kv::ClusterMetrics>(*registry, cluster_node.get());
+  }
   kv::KvServiceImpl kv_service(&store, *registry, cluster_node.get());
   kv::AdminServiceImpl admin_service(&store, cluster_node.get(), fault.get());
 
@@ -182,6 +190,7 @@ int main(int argc, char** argv) {
   }
   server->GetHealthCheckService()->SetServingStatus(true);
   if (cluster_node) cluster_node->Start();
+  if (cluster_metrics) cluster_metrics->Start();
   CW_LOG_INFO("wheel-node {} serving on {} (engine={}, {}, metrics :{}, version {} {})", node_id,
               listen, store.engine().Name(),
               clustered ? fmt::format("cluster N={} R={} W={}", cluster_node->options().n,
@@ -194,9 +203,11 @@ int main(int argc, char** argv) {
   admin_service.SetDraining();
   server->GetHealthCheckService()->SetServingStatus(false);
   std::this_thread::sleep_for(drain_grace);
+  if (cluster_metrics) cluster_metrics->Stop();
   if (cluster_node) cluster_node->Stop();
   server->Shutdown(std::chrono::system_clock::now() + shutdown_deadline);
   if (scheduler) scheduler->Stop();
   CW_LOG_INFO("wheel-node {} stopped", node_id);
+  tracing::Shutdown();
   return 0;
 }

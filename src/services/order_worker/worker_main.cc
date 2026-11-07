@@ -17,6 +17,7 @@
 #include "common/logging.h"
 #include "common/metrics.h"
 #include "common/signals.h"
+#include "common/tracing.h"
 #include "services/deal/kafka_log.h"
 #include "services/deal/order_processor.h"
 #include "services/deal/pg_store.h"
@@ -41,6 +42,8 @@ int main(int argc, char** argv) {
   InitLogging({.service = "order-worker",
                .level = cfg.GetString("log.level", "info"),
                .json = cfg.GetBool("log.json", false)});
+  // tracing.otlp_endpoint = "host:4317" turns on OpenTelemetry export.
+  tracing::Init("order-worker", cfg.GetString("tracing.otlp_endpoint", ""));
 
   auto registry = GlobalMetricsRegistry();
   RegisterBuildInfo(*registry, "order-worker");
@@ -93,5 +96,6 @@ int main(int argc, char** argv) {
   stop.store(true);
   consumer.join();
   source->reset();  // close(): leave the group so partitions move at once
+  tracing::Shutdown();
   return 0;
 }

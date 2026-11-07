@@ -8,8 +8,11 @@ function(cartwheel_add_test name)
   add_executable(${name} ${ARG_SOURCES})
   cartwheel_target_defaults(${name})
   target_link_libraries(${name} PRIVATE ${ARG_LIBS} GTest::gtest_main)
+  # Discover at test time, not build time: a sanitized binary on a loaded
+  # machine can take longer than any build-time timeout just to list tests.
   gtest_discover_tests(${name}
-    DISCOVERY_TIMEOUT 30
+    DISCOVERY_MODE PRE_TEST
+    DISCOVERY_TIMEOUT 120
     PROPERTIES LABELS "${ARG_LABELS}" TIMEOUT ${ARG_TIMEOUT})
 endfunction()
 

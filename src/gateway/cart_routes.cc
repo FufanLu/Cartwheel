@@ -3,6 +3,7 @@
 #include <grpcpp/client_context.h>
 #include <nlohmann/json.hpp>
 
+#include "common/grpc_tracing.h"
 #include "gateway/grpc_await.h"
 #include "kv/grpc_status.h"
 
@@ -11,10 +12,16 @@ namespace {
 
 using cart::v1::Cart;
 
-void PrepareContext(grpc::ClientContext* g, const RequestContext& ctx,
-                    std::chrono::milliseconds timeout) {
+// Deadline, request id and a client span whose context travels in metadata.
+// The span lives until the caller's RPC completes.
+tracing::Span PrepareContext(grpc::ClientContext* g, const RequestContext& ctx,
+                             std::chrono::milliseconds timeout) {
   g->set_deadline(std::chrono::system_clock::now() + timeout);
   g->AddMetadata("x-request-id", ctx.request_id);
+  tracing::Span span = tracing::StartSpan("rpc " + ctx.route, tracing::Kind::kClient,
+                                          ctx.span != nullptr ? ctx.span->TraceParent() : "");
+  tracing::Inject(g, span);
+  return span;
 }
 
 Response CartOrError(const grpc::Status& s, const Cart& cart, const RequestContext& ctx) {
@@ -68,7 +75,7 @@ nlohmann::json CartRoutes::CartToJson(const Cart& cart) {
 
 boost::asio::awaitable<Response> CartRoutes::Get(RequestContext& ctx) {
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, timeout_);
+  auto rpc_span = PrepareContext(&g, ctx, timeout_);
   cart::v1::GetCartRequest req;
   req.set_user_id(ctx.params.at("user"));
   Cart resp;
@@ -94,7 +101,7 @@ boost::asio::awaitable<Response> CartRoutes::AddItem(RequestContext& ctx) {
   req.set_idempotency_key(std::string(ctx.request["Idempotency-Key"].substr(0, 128)));
 
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, timeout_);
+  auto rpc_span = PrepareContext(&g, ctx, timeout_);
   Cart resp;
   const grpc::Status s = co_await AwaitGrpc(
       [&](auto done) { stub_->async()->AddItem(&g, &req, &resp, std::move(done)); });
@@ -103,7 +110,7 @@ boost::asio::awaitable<Response> CartRoutes::AddItem(RequestContext& ctx) {
 
 boost::asio::awaitable<Response> CartRoutes::RemoveItem(RequestContext& ctx) {
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, timeout_);
+  auto rpc_span = PrepareContext(&g, ctx, timeout_);
   cart::v1::RemoveItemRequest req;
   req.set_user_id(ctx.params.at("user"));
   req.set_sku(ctx.params.at("sku"));
@@ -115,7 +122,7 @@ boost::asio::awaitable<Response> CartRoutes::RemoveItem(RequestContext& ctx) {
 
 boost::asio::awaitable<Response> CartRoutes::Clear(RequestContext& ctx) {
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, timeout_);
+  auto rpc_span = PrepareContext(&g, ctx, timeout_);
   cart::v1::ClearCartRequest req;
   req.set_user_id(ctx.params.at("user"));
   Cart resp;

@@ -6,6 +6,7 @@
 #include <grpcpp/grpcpp.h>
 
 #include "cartwheel/kv/v1/kv.grpc.pb.h"
+#include "common/grpc_tracing.h"
 #include "kv/grpc_status.h"
 
 namespace cartwheel::client {
@@ -17,19 +18,30 @@ struct KvClient::Impl {
 
   // Runs `rpc(ctx)` with a fresh deadline per attempt and jittered retries.
   template <typename Rpc>
-  Status Call(Rpc&& rpc) {
+  Status Call(std::string_view op, Rpc&& rpc) {
+    // Child of the thread's current parent (the cart-svc request).
+    tracing::Span span =
+        tracing::StartSpan(std::string("kv ") + std::string(op), tracing::Kind::kClient);
     Backoff backoff(options.retry);
-    for (;;) {
+    for (int attempt = 1;; ++attempt) {
+      span.SetAttribute("cartwheel.attempts", int64_t{attempt});
       grpc::ClientContext ctx;
+      tracing::Inject(&ctx, span);
       ctx.set_deadline(std::chrono::system_clock::now() +
                        std::chrono::milliseconds(options.timeout_ms));
       // While the node restarts, wait (within the deadline) for the channel to
       // reconnect instead of failing fast with UNAVAILABLE.
       ctx.set_wait_for_ready(true);
       Status s = kv::FromGrpc(rpc(&ctx));
-      if (s.ok() || !s.retryable()) return s;
+      if (s.ok() || !s.retryable()) {
+        if (!s.ok()) span.SetError(s.ToString());
+        return s;
+      }
       const auto delay = backoff.NextDelayMicros();
-      if (!delay) return s.WithContext("retries exhausted");
+      if (!delay) {
+        span.SetError(s.ToString());
+        return s.WithContext("retries exhausted");
+      }
       std::this_thread::sleep_for(std::chrono::microseconds(*delay));
     }
   }
@@ -80,7 +92,7 @@ Result<KvRecord> KvClient::Get(std::string_view table, std::string_view key) {
   req.set_table(std::string(table));
   req.set_key(std::string(key));
   kv::v1::GetResponse resp;
-  CW_RETURN_IF_ERROR(impl_->Call([&](grpc::ClientContext* ctx) {
+  CW_RETURN_IF_ERROR(impl_->Call("get", [&](grpc::ClientContext* ctx) {
     resp.Clear();
     return impl_->stub->Get(ctx, req, &resp);
   }));
@@ -95,7 +107,7 @@ Result<KvRecord> KvClient::Put(std::string_view table, std::string_view key, std
   req.set_value(std::string(value));
   req.set_context(std::string(context));
   kv::v1::PutResponse resp;
-  CW_RETURN_IF_ERROR(impl_->Call([&](grpc::ClientContext* ctx) {
+  CW_RETURN_IF_ERROR(impl_->Call("put", [&](grpc::ClientContext* ctx) {
     resp.Clear();
     return impl_->stub->Put(ctx, req, &resp);
   }));
@@ -109,7 +121,7 @@ Result<KvRecord> KvClient::Delete(std::string_view table, std::string_view key,
   req.set_key(std::string(key));
   req.set_context(std::string(context));
   kv::v1::DeleteResponse resp;
-  CW_RETURN_IF_ERROR(impl_->Call([&](grpc::ClientContext* ctx) {
+  CW_RETURN_IF_ERROR(impl_->Call("delete", [&](grpc::ClientContext* ctx) {
     resp.Clear();
     return impl_->stub->Delete(ctx, req, &resp);
   }));

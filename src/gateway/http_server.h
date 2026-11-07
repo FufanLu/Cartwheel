@@ -59,7 +59,7 @@ class HttpServer {
   boost::asio::awaitable<void> AcceptLoop();
   boost::asio::awaitable<void> Session(boost::asio::ip::tcp::socket socket);
   boost::asio::awaitable<Response> Dispatch(const Request& req, std::string request_id,
-                                            std::string* route);
+                                            std::string* route, const tracing::Span* span);
 
   const HttpServerOptions options_;
   const Router* router_;

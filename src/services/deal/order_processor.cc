@@ -5,6 +5,7 @@
 
 #include "common/logging.h"
 #include "common/metrics.h"
+#include "common/tracing.h"
 
 namespace cartwheel::deal {
 
@@ -35,12 +36,24 @@ OrderProcessor::OrderProcessor(OrderStore* store, OrderNotifier* notifier,
 
 Status OrderProcessor::Process(const std::vector<v1::OrderPlaced>& batch) {
   if (batch.empty()) return Status::Ok();
+  // One span per transaction, linked to the claims it commits (capped: a
+  // trace view does not need 500 references).
+  std::vector<std::string> links;
+  for (const auto& e : batch) {
+    if (!e.traceparent().empty() && links.size() < 64) links.push_back(e.traceparent());
+  }
+  tracing::Span span = tracing::StartSpan("order batch commit (postgres)", tracing::Kind::kConsumer,
+                                          links.empty() ? "" : links.front(), links);
+  span.SetAttribute("cartwheel.batch_size", static_cast<int64_t>(batch.size()));
   const auto start = std::chrono::steady_clock::now();
   auto result = store_->ApplyBatch(batch);
   if (!result.ok()) {
     failed_batches_.Increment();
+    span.SetError(result.status().ToString());
     return result.status();
   }
+  span.SetAttribute("cartwheel.confirmed", static_cast<int64_t>(result->confirmed.size()));
+  span.SetAttribute("cartwheel.duplicates", static_cast<int64_t>(result->duplicates.size()));
   commit_latency_.Observe(
       std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
   batch_size_.Observe(static_cast<double>(batch.size()));

@@ -134,7 +134,19 @@ asio::awaitable<void> HttpServer::Session(tcp::socket socket) {
       res = ErrorResponse(Status::ResourceExhausted("gateway overloaded"), ctx);
       route = "shed";
     } else {
-      res = co_await Dispatch(req, request_id, &route);
+      // A caller's traceparent (a browser, k6, another service) continues
+      // its trace; otherwise the gateway starts one.
+      tracing::Span span =
+          tracing::StartSpan("HTTP " + std::string(req.method_string()), tracing::Kind::kServer,
+                             std::string_view(req["traceparent"]));
+      res = co_await Dispatch(req, request_id, &route, &span);
+      span.SetName(std::string(req.method_string()) + " " + route);
+      span.SetAttribute("http.request.method", std::string_view(req.method_string()));
+      span.SetAttribute("http.route", route);
+      span.SetAttribute("http.response.status_code", static_cast<int64_t>(res.result_int()));
+      span.SetAttribute("cartwheel.request_id", request_id);
+      if (res.result_int() >= 500) span.SetError(res.reason());
+      if (span) res.set("X-Trace-Id", span.TraceId());
     }
     inflight_.fetch_sub(1, std::memory_order_relaxed);
     inflight_gauge_.Decrement();
@@ -161,9 +173,9 @@ asio::awaitable<void> HttpServer::Session(tcp::socket socket) {
 }
 
 asio::awaitable<Response> HttpServer::Dispatch(const Request& req, std::string request_id,
-                                               std::string* route) {
+                                               std::string* route, const tracing::Span* span) {
   auto match = router_->Find(req.method(), req.target());
-  RequestContext ctx{req, std::move(match.params), std::move(request_id), match.route};
+  RequestContext ctx{req, std::move(match.params), std::move(request_id), match.route, span};
   if (match.handler == nullptr) {
     *route = match.path_known ? "method_not_allowed" : "not_found";
     co_return JsonResponse(

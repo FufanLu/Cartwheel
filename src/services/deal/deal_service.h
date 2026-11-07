@@ -6,6 +6,7 @@
 
 #include "cartwheel/deal/v1/deal.grpc.pb.h"
 #include "common/thread_pool.h"
+#include "common/tracing.h"
 #include "services/deal/deal_engine.h"
 
 namespace cartwheel::deal {
@@ -37,7 +38,8 @@ class DealServiceImpl final : public v1::DealService::CallbackService {
   template <typename Resp, typename Fn>
   grpc::ServerUnaryReactor* Dispatch(grpc::CallbackServerContext* ctx, const char* op, Resp* resp,
                                      Fn&& fn);
-  std::function<void(const Status&)> Finisher(grpc::ServerUnaryReactor* reactor, const char* op);
+  std::function<void(const Status&)> Finisher(grpc::ServerUnaryReactor* reactor, const char* op,
+                                              std::shared_ptr<tracing::Span> span);
 
   DealEngine* engine_;
   ThreadPool* workers_;

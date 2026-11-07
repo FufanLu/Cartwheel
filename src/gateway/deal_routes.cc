@@ -5,6 +5,7 @@
 #include <grpcpp/client_context.h>
 #include <nlohmann/json.hpp>
 
+#include "common/grpc_tracing.h"
 #include "gateway/grpc_await.h"
 #include "kv/grpc_status.h"
 
@@ -13,10 +14,16 @@ namespace {
 
 namespace dv1 = deal::v1;
 
-void PrepareContext(grpc::ClientContext* g, const RequestContext& ctx,
-                    std::chrono::milliseconds timeout) {
+// Deadline, request id and a client span whose context travels in metadata.
+// The span lives until the caller's RPC completes.
+tracing::Span PrepareContext(grpc::ClientContext* g, const RequestContext& ctx,
+                             std::chrono::milliseconds timeout) {
   g->set_deadline(std::chrono::system_clock::now() + timeout);
   g->AddMetadata("x-request-id", ctx.request_id);
+  tracing::Span span = tracing::StartSpan("rpc " + ctx.route, tracing::Kind::kClient,
+                                          ctx.span != nullptr ? ctx.span->TraceParent() : "");
+  tracing::Inject(g, span);
+  return span;
 }
 
 const char* OrderStatusName(dv1::Order::Status s) {
@@ -111,7 +118,7 @@ boost::asio::awaitable<Response> DealRoutes::Login(RequestContext& ctx) {
 
 boost::asio::awaitable<Response> DealRoutes::ListDeals(RequestContext& ctx) {
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, options_.upstream_timeout);
+  auto rpc_span = PrepareContext(&g, ctx, options_.upstream_timeout);
   dv1::ListDealsRequest req;
   dv1::ListDealsResponse resp;
   const grpc::Status s = co_await AwaitGrpc(
@@ -132,7 +139,7 @@ boost::asio::awaitable<Response> DealRoutes::Claim(RequestContext& ctx) {
     co_return Throttled(wait, ctx);
   }
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, options_.upstream_timeout);
+  auto rpc_span = PrepareContext(&g, ctx, options_.upstream_timeout);
   dv1::ClaimRequest req;
   req.set_deal_id(ctx.params.at("deal"));
   req.set_user_id(*user);
@@ -169,7 +176,7 @@ boost::asio::awaitable<Response> DealRoutes::ListOrders(RequestContext& ctx) {
   auto user = auth_->UserFromRequest(ctx.request);
   if (!user.ok()) co_return ErrorResponse(user.status(), ctx);
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, options_.upstream_timeout);
+  auto rpc_span = PrepareContext(&g, ctx, options_.upstream_timeout);
   dv1::ListOrdersRequest req;
   req.set_user_id(*user);
   dv1::ListOrdersResponse resp;
@@ -185,7 +192,7 @@ boost::asio::awaitable<Response> DealRoutes::GetOrder(RequestContext& ctx) {
   auto user = auth_->UserFromRequest(ctx.request);
   if (!user.ok()) co_return ErrorResponse(user.status(), ctx);
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, options_.upstream_timeout);
+  auto rpc_span = PrepareContext(&g, ctx, options_.upstream_timeout);
   dv1::GetOrderRequest req;
   req.set_user_id(*user);
   req.set_order_id(ctx.params.at("order"));
@@ -214,7 +221,7 @@ boost::asio::awaitable<Response> DealRoutes::Reset(RequestContext& ctx) {
                             ctx);
   }
   grpc::ClientContext g;
-  PrepareContext(&g, ctx, options_.upstream_timeout);
+  auto rpc_span = PrepareContext(&g, ctx, options_.upstream_timeout);
   dv1::Deal resp;
   const grpc::Status s = co_await AwaitGrpc(
       [&](auto done) { stub_->async()->ResetDeal(&g, &req, &resp, std::move(done)); });

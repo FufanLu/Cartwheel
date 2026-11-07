@@ -1,0 +1,67 @@
+# Alert rules for Cartwheel. Each names a symptom a user would feel, and links
+# the runbook that says what to check first (docs/runbooks/).
+groups:
+  - name: cartwheel-kv
+    rules:
+      - alert: CartwheelNodeDown
+        expr: up{job="wheel-node"} == 0
+        for: 30s
+        labels: { severity: page }
+        annotations:
+          summary: "wheel-node {{ $labels.instance }} is not answering scrapes"
+          runbook_url: "https://github.com/FufanLu/Cartwheel/blob/main/docs/runbooks/node-down.md"
+      - alert: CartwheelMemberNotAlive
+        # Any node's failure detector sees a peer as suspect or dead.
+        expr: max(cartwheel_cluster_members{state=~"SUSPECT|DEAD"}) > 0
+        for: 1m
+        labels: { severity: ticket }
+        annotations:
+          summary: "A cluster member has been suspect or dead for a minute"
+          runbook_url: "https://github.com/FufanLu/Cartwheel/blob/main/docs/runbooks/node-down.md"
+      - alert: CartwheelHintBacklog
+        expr: sum(cartwheel_cluster_hints_pending) > 1000
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $value }} hinted writes are waiting for a peer"
+          runbook_url: "https://github.com/FufanLu/Cartwheel/blob/main/docs/runbooks/hint-backlog.md"
+      - alert: CartwheelQuorumFailures
+        expr: sum(rate(cartwheel_cluster_events_total{kind="quorum_failure"}[1m])) > 1
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "Writes or reads are failing to reach quorum ({{ $value }}/s)"
+          runbook_url: "https://github.com/FufanLu/Cartwheel/blob/main/docs/runbooks/quorum-failures.md"
+  - name: cartwheel-edge
+    rules:
+      - alert: CartwheelGatewayP99High
+        expr: histogram_quantile(0.99, sum by (le) (rate(cartwheel_http_request_duration_seconds_bucket{route!~"shed|/metrics"}[5m]))) > 0.25
+        for: 5m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Gateway p99 is {{ $value | humanizeDuration }}"
+          runbook_url: "https://github.com/FufanLu/Cartwheel/blob/main/docs/runbooks/latency.md"
+      - alert: CartwheelGatewayShedding
+        expr: sum(rate(cartwheel_http_shed_total[1m])) > 0
+        for: 2m
+        labels: { severity: ticket }
+        annotations:
+          summary: "The gateway is shedding load (503) at {{ $value }}/s"
+          runbook_url: "https://github.com/FufanLu/Cartwheel/blob/main/docs/runbooks/latency.md"
+  - name: cartwheel-deals
+    rules:
+      - alert: CartwheelDealRedriveStuck
+        # Reservations the order log has not acknowledged for two minutes.
+        expr: max(cartwheel_deal_redrive_pending) > 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $value }} reservations are not reaching the order log"
+          runbook_url: "https://github.com/FufanLu/Cartwheel/blob/main/docs/runbooks/deal-pipeline.md"
+      - alert: CartwheelOrderCommitFailing
+        expr: sum(rate(cartwheel_order_batch_failures_total[5m])) > 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "order-worker batches are failing to commit to Postgres"
+          runbook_url: "https://github.com/FufanLu/Cartwheel/blob/main/docs/runbooks/deal-pipeline.md"

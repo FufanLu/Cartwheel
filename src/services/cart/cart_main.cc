@@ -20,6 +20,7 @@
 #include "common/metrics.h"
 #include "common/signals.h"
 #include "common/thread_pool.h"
+#include "common/tracing.h"
 #include "services/cart/cart_service.h"
 #include "services/cart/cart_store.h"
 
@@ -41,6 +42,8 @@ int main(int argc, char** argv) {
   InitLogging({.service = "cart-svc",
                .level = cfg.GetString("log.level", "info"),
                .json = cfg.GetBool("log.json", false)});
+  // tracing.otlp_endpoint = "host:4317" turns on OpenTelemetry export.
+  tracing::Init("cart-svc", cfg.GetString("tracing.otlp_endpoint", ""));
 
   const std::string listen = cfg.GetString("server.listen", "0.0.0.0:7200");
   const std::string kv_target = cfg.GetString("kv.target", "localhost:7100");
@@ -85,5 +88,6 @@ int main(int argc, char** argv) {
   std::this_thread::sleep_for(std::chrono::milliseconds(cfg.GetInt("server.drain_grace_ms", 1000)));
   server->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
   workers.Shutdown();
+  tracing::Shutdown();
   return 0;
 }

@@ -20,7 +20,8 @@ add_library(cartwheel_common
   signals.cc
   status.cc
   thread_pool.cc
-  token_bucket.cc)
+  token_bucket.cc
+  tracing.cc)
 add_library(cartwheel::common ALIAS cartwheel_common)
 cartwheel_target_defaults(cartwheel_common)
 
@@ -39,4 +40,6 @@ target_link_libraries(cartwheel_common
     Threads::Threads
   PRIVATE
     tomlplusplus::tomlplusplus
-    prometheus-cpp::pull)
+    prometheus-cpp::pull
+    opentelemetry-cpp::trace
+    opentelemetry-cpp::otlp_grpc_exporter)

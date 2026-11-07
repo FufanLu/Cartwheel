@@ -3,6 +3,7 @@
 #include <chrono>
 #include <memory>
 
+#include "common/grpc_tracing.h"
 #include "common/metrics.h"
 #include "kv/grpc_status.h"
 
@@ -32,9 +33,14 @@ DealServiceImpl::DealServiceImpl(DealEngine* engine, ThreadPool* workers,
                    .Register(registry)) {}
 
 std::function<void(const Status&)> DealServiceImpl::Finisher(grpc::ServerUnaryReactor* reactor,
-                                                             const char* op) {
+                                                             const char* op,
+                                                             std::shared_ptr<tracing::Span> span) {
   const auto start = std::chrono::steady_clock::now();
-  return [this, reactor, op, start](const Status& s) {
+  return [this, reactor, op, start, span = std::move(span)](const Status& s) {
+    if (span) {
+      if (!s.ok()) span->SetError(s.ToString());
+      span->End();
+    }
     latency_.Add({{"op", op}}, LatencyBucketsSeconds())
         .Observe(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     results_.Add({{"op", op}, {"code", std::string(StatusCodeName(s.code()))}}).Increment();
@@ -46,17 +52,21 @@ template <typename Resp, typename Fn>
 grpc::ServerUnaryReactor* DealServiceImpl::Dispatch(grpc::CallbackServerContext* ctx,
                                                     const char* op, Resp* resp, Fn&& fn) {
   auto* reactor = ctx->DefaultReactor();
-  auto finish = Finisher(reactor, op);
-  const bool queued = workers_->TrySubmit([ctx, resp, finish, fn = std::forward<Fn>(fn)]() mutable {
-    if (ctx->IsCancelled()) {
-      finish(Status::Cancelled("deadline exceeded before execution"));
-      return;
-    }
-    auto result = fn();
-    const Status status = result.status();
-    if (result.ok()) *resp = std::move(result).value();
-    finish(status);
-  });
+  auto span = std::make_shared<tracing::Span>(tracing::StartSpan(
+      std::string("DealService/") + op, tracing::Kind::kServer, tracing::IncomingParent(ctx)));
+  auto finish = Finisher(reactor, op, span);
+  const bool queued =
+      workers_->TrySubmit([ctx, resp, finish, span, fn = std::forward<Fn>(fn)]() mutable {
+        if (ctx->IsCancelled()) {
+          finish(Status::Cancelled("deadline exceeded before execution"));
+          return;
+        }
+        const tracing::ScopedParent parent(span->TraceParent());
+        auto result = fn();
+        const Status status = result.status();
+        if (result.ok()) *resp = std::move(result).value();
+        finish(status);
+      });
   if (!queued) finish(Status::ResourceExhausted("deal-svc overloaded; retry with backoff"));
   return reactor;
 }
@@ -76,16 +86,20 @@ grpc::ServerUnaryReactor* DealServiceImpl::Claim(grpc::CallbackServerContext* ct
                                                  const v1::ClaimRequest* req,
                                                  v1::ClaimResponse* resp) {
   auto* reactor = ctx->DefaultReactor();
-  auto finish = Finisher(reactor, "claim");
+  auto span = std::make_shared<tracing::Span>(tracing::StartSpan(
+      "DealService/claim", tracing::Kind::kServer, tracing::IncomingParent(ctx)));
+  span->SetAttribute("cartwheel.deal_id", req->deal_id());
+  auto finish = Finisher(reactor, "claim", span);
   if (auto s = ValidUser(req->user_id()); !s.ok()) {
     finish(s);
     return reactor;
   }
-  const bool queued = workers_->TrySubmit([this, ctx, req, resp, finish] {
+  const bool queued = workers_->TrySubmit([this, ctx, req, resp, finish, span] {
     if (ctx->IsCancelled()) {
       finish(Status::Cancelled("deadline exceeded before execution"));
       return;
     }
+    const tracing::ScopedParent parent(span->TraceParent());
     engine_->Claim(req->deal_id(), req->user_id(),
                    [resp, finish](Result<v1::ClaimResponse> result) {
                      const Status status = result.status();

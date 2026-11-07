@@ -1,4 +1,5 @@
 add_library(cartwheel_kv
+  cluster_metrics.cc
   cluster_node.cc
   grpc_status.cc
   in_process_kv.cc

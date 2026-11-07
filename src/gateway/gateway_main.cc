@@ -18,6 +18,7 @@
 #include "common/logging.h"
 #include "common/metrics.h"
 #include "common/signals.h"
+#include "common/tracing.h"
 #include "gateway/auth.h"
 #include "gateway/cart_routes.h"
 #include "gateway/deal_routes.h"
@@ -56,6 +57,8 @@ int main(int argc, char** argv) {
   InitLogging({.service = "gateway",
                .level = cfg.GetString("log.level", "info"),
                .json = cfg.GetBool("log.json", false)});
+  // tracing.otlp_endpoint = "host:4317" turns on OpenTelemetry export.
+  tracing::Init("gateway", cfg.GetString("tracing.otlp_endpoint", ""));
 
   auto registry = GlobalMetricsRegistry();
   RegisterBuildInfo(*registry, "gateway");
@@ -135,5 +138,6 @@ int main(int argc, char** argv) {
   CW_LOG_INFO("signal {}: stopping", sig);
   if (feed) feed->Stop();
   server.Stop();
+  tracing::Shutdown();
   return 0;
 }

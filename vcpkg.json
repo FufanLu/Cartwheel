@@ -25,6 +25,13 @@
     "libpqxx",
     "redis-plus-plus",
     "librdkafka",
+    {
+      "name": "opentelemetry-cpp",
+      "default-features": false,
+      "features": [
+        "otlp-grpc"
+      ]
+    },
     "gtest",
     "benchmark"
   ],

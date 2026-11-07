@@ -6,6 +6,7 @@
 
 #include "common/build_info.h"
 #include "common/clock.h"
+#include "common/grpc_tracing.h"
 #include "common/logging.h"
 #include "common/metrics.h"
 #include "kv/grpc_status.h"
@@ -134,7 +135,7 @@ void KvServiceImpl::Record(const OpMetrics& m, std::string_view op, const Status
 }
 
 template <typename Resp>
-void KvServiceImpl::CoordinatedWrite(grpc::CallbackServerContext* /*ctx*/, const OpMetrics& m,
+void KvServiceImpl::CoordinatedWrite(grpc::CallbackServerContext* ctx, const OpMetrics& m,
                                      std::string_view op, const std::string& table,
                                      const std::string& key, const std::string& value,
                                      const std::string& context, bool tombstone, uint32_t w,
@@ -150,8 +151,19 @@ void KvServiceImpl::CoordinatedWrite(grpc::CallbackServerContext* /*ctx*/, const
     reactor->Finish(ToGrpc(s));
     return;
   }
+  auto span = std::make_shared<tracing::Span>(
+      tracing::StartSpan(std::string("KvService/") + std::string(op), tracing::Kind::kServer,
+                         tracing::IncomingParent(ctx)));
+  span->SetAttribute("cartwheel.table", table);
   cluster_->Put(table, key, value, std::move(clock).value(), tombstone, w,
-                [this, &m, op, resp, reactor, start](Result<CoordinatorResult> r) {
+                [this, &m, op, resp, reactor, start, span](Result<CoordinatorResult> r) {
+                  if (r.ok()) {
+                    span->SetAttribute("cartwheel.replicas_acked",
+                                       static_cast<int64_t>(r->replicas));
+                  } else {
+                    span->SetError(r.status().ToString());
+                  }
+                  span->End();
                   if (r.ok()) {
                     FillVersions(r->siblings, resp->mutable_versions());
                     resp->set_context(r->siblings.Join().Encode());
@@ -176,8 +188,20 @@ grpc::ServerUnaryReactor* KvServiceImpl::Get(grpc::CallbackServerContext* ctx,
     reactor->Finish(ToGrpc(s));
     return reactor;
   }
+  auto span = std::make_shared<tracing::Span>(
+      tracing::StartSpan("KvService/get", tracing::Kind::kServer, tracing::IncomingParent(ctx)));
+  span->SetAttribute("cartwheel.table", req->table());
   cluster_->Get(req->table(), req->key(), req->r(),
-                [this, resp, reactor, start](Result<CoordinatorResult> r) {
+                [this, resp, reactor, start, span](Result<CoordinatorResult> r) {
+                  if (r.ok()) {
+                    span->SetAttribute("cartwheel.replicas_responded",
+                                       static_cast<int64_t>(r->replicas));
+                    span->SetAttribute("cartwheel.siblings",
+                                       static_cast<int64_t>(r->siblings.siblings().size()));
+                  } else {
+                    span->SetError(r.status().ToString());
+                  }
+                  span->End();
                   if (r.ok()) {
                     FillVersions(r->siblings, resp->mutable_versions());
                     if (!r->siblings.empty()) resp->set_context(r->siblings.Join().Encode());

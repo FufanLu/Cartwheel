@@ -9,6 +9,7 @@
 
 #include "common/logging.h"
 #include "common/metrics.h"
+#include "common/tracing.h"
 
 namespace cartwheel::deal {
 namespace {
@@ -103,6 +104,7 @@ void DealEngine::Claim(const std::string& deal_id, const std::string& user_id, C
   }
 
   std::string order_id = NewOrderId();
+  tracing::Span gate_span = tracing::StartSpan("gate.reserve (redis lua)", tracing::Kind::kClient);
   const auto gate_start = std::chrono::steady_clock::now();
   auto res = gate_->Reserve(deal.deal_id, deal.generation, user_id, order_id);
   if (res.ok() && res->kind == Reservation::Kind::kNotArmed) {
@@ -124,6 +126,14 @@ void DealEngine::Claim(const std::string& deal_id, const std::string& user_id, C
     }
   }
   gate_latency_.Observe(SecondsSince(gate_start));
+  if (res.ok()) {
+    static constexpr const char* kKinds[] = {"reserved", "already_claimed", "sold_out",
+                                             "not_armed"};
+    gate_span.SetAttribute("cartwheel.gate", kKinds[static_cast<int>(res->kind)]);
+  } else {
+    gate_span.SetError(res.status().ToString());
+  }
+  gate_span.End();
   if (!res.ok()) {
     outcomes_.Add({{"outcome", "error"}}).Increment();
     done(res.status().WithContext("inventory gate"));
@@ -146,10 +156,18 @@ void DealEngine::Claim(const std::string& deal_id, const std::string& user_id, C
   event.set_generation(deal.generation);
   event.set_reserved_at_ms(now_ms);
   const int64_t remaining = res->remaining;
+  // The producer span ends when the broker acknowledges; its context rides in
+  // the record so order-worker's commit links back to this claim.
+  auto publish_span = std::make_shared<tracing::Span>(
+      tracing::StartSpan("deal-orders publish", tracing::Kind::kProducer));
+  publish_span->SetAttribute("cartwheel.order_id", order_id);
+  event.set_traceparent(publish_span->TraceParent());
   const auto publish_start = std::chrono::steady_clock::now();
-  log_->Publish(event, [this, done = std::move(done), event, order_id, remaining, publish_start](
-                           PublishOutcome outcome, const std::string& error) {
+  log_->Publish(event, [this, done = std::move(done), event, order_id, remaining, publish_start,
+                        publish_span](PublishOutcome outcome, const std::string& error) {
     publish_latency_.Observe(SecondsSince(publish_start));
+    if (outcome != PublishOutcome::kDelivered) publish_span->SetError(error);
+    publish_span->End();
     if (outcome == PublishOutcome::kDelivered) {
       publish_results_.Add({{"result", "delivered"}}).Increment();
       Finish(done, Outcome::OUTCOME_RESERVED, order_id, remaining);

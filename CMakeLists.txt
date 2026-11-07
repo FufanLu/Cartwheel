@@ -83,6 +83,7 @@ target_link_libraries(cartwheel_pq INTERFACE
   libpqxx::pqxx ${CARTWHEEL_PGCOMMON_LIB} ${CARTWHEEL_PGPORT_LIB} OpenSSL::SSL OpenSSL::Crypto)
 find_package(redis++ CONFIG REQUIRED)
 find_package(RdKafka CONFIG REQUIRED)
+find_package(opentelemetry-cpp CONFIG REQUIRED)
 
 # gRPC server reflection (for grpcurl) is optional: vcpkg builds gRPC for the
 # sanitizer triplets as a cross-compile, which skips codegen-dependent libs.

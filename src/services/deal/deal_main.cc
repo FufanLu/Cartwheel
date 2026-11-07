@@ -26,6 +26,7 @@
 #include "common/metrics.h"
 #include "common/signals.h"
 #include "common/thread_pool.h"
+#include "common/tracing.h"
 #include "services/deal/deal_catalog.h"
 #include "services/deal/deal_engine.h"
 #include "services/deal/deal_service.h"
@@ -108,6 +109,8 @@ int main(int argc, char** argv) {
   InitLogging({.service = "deal-svc",
                .level = cfg.GetString("log.level", "info"),
                .json = cfg.GetBool("log.json", false)});
+  // tracing.otlp_endpoint = "host:4317" turns on OpenTelemetry export.
+  tracing::Init("deal-svc", cfg.GetString("tracing.otlp_endpoint", ""));
 
   auto registry = GlobalMetricsRegistry();
   RegisterBuildInfo(*registry, "deal-svc");
@@ -243,5 +246,6 @@ int main(int argc, char** argv) {
   sweeper.join();
   if (memory_log != nullptr) memory_log->Close();
   if (worker.joinable()) worker.join();
+  tracing::Shutdown();
   return 0;
 }

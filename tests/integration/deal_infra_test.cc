@@ -283,16 +283,26 @@ TEST(DealPipelineInfra, SpikeSellsExactlyTheQuantity) {
   for (int t = 0; t < 32; ++t) {
     buyers.emplace_back([&, t] {
       for (int u = t; u < kUsers; u += 32) {
-        std::promise<Result<v1::ClaimResponse>> p;
-        engine.Claim(deal, fmt::format("buyer{}", u),
-                     [&](Result<v1::ClaimResponse> r) { p.set_value(std::move(r)); });
-        auto r = p.get_future().get();
-        if (!r.ok()) {
-          errors.fetch_add(1);
-        } else if (r->outcome() == v1::ClaimResponse::OUTCOME_RESERVED) {
-          reserved.fetch_add(1);
-        } else if (r->outcome() == v1::ClaimResponse::OUTCOME_SOLD_OUT) {
-          sold_out.fetch_add(1);
+        // A real client: a retryable error (the log did not confirm in
+        // time) is retried; the retry finds the held unit as ALREADY_CLAIMED.
+        for (int attempt = 0; attempt < 6; ++attempt) {
+          std::promise<Result<v1::ClaimResponse>> p;
+          engine.Claim(deal, fmt::format("buyer{}", u),
+                       [&](Result<v1::ClaimResponse> r) { p.set_value(std::move(r)); });
+          auto r = p.get_future().get();
+          if (!r.ok()) {
+            if (r.status().retryable() && attempt < 5) {
+              std::this_thread::sleep_for(std::chrono::milliseconds(200 << attempt));
+              continue;
+            }
+            errors.fetch_add(1);
+          } else if (r->outcome() == v1::ClaimResponse::OUTCOME_RESERVED ||
+                     r->outcome() == v1::ClaimResponse::OUTCOME_ALREADY_CLAIMED) {
+            reserved.fetch_add(1);
+          } else if (r->outcome() == v1::ClaimResponse::OUTCOME_SOLD_OUT) {
+            sold_out.fetch_add(1);
+          }
+          break;
         }
       }
     });

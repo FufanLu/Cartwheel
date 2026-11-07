@@ -11,6 +11,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "common/status.h"
+#include "common/tracing.h"
 
 namespace cartwheel::gateway {
 
@@ -24,7 +25,8 @@ struct RequestContext {
   const Request& request;
   PathParams params;
   std::string request_id;
-  std::string route;  // matched pattern, used as a low-cardinality metric label
+  std::string route;                    // matched pattern, used as a low-cardinality metric label
+  const tracing::Span* span = nullptr;  // the request's server span (may be null)
 };
 
 using Handler = std::function<boost::asio::awaitable<Response>(RequestContext&)>;

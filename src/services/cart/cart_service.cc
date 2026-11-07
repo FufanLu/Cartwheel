@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 
+#include "common/grpc_tracing.h"
 #include "common/metrics.h"
 #include "kv/grpc_status.h"
 
@@ -27,22 +28,29 @@ grpc::ServerUnaryReactor* CartServiceImpl::Dispatch(grpc::CallbackServerContext*
                                                     const char* op, v1::Cart* resp, Fn&& fn) {
   auto* reactor = ctx->DefaultReactor();
   const auto start = std::chrono::steady_clock::now();
-  auto finish = [this, reactor, op, start](const Status& s) {
+  auto span = std::make_shared<tracing::Span>(tracing::StartSpan(
+      std::string("CartService/") + op, tracing::Kind::kServer, tracing::IncomingParent(ctx)));
+  auto finish = [this, reactor, op, start, span](const Status& s) {
+    if (!s.ok()) span->SetError(s.ToString());
+    span->End();
     latency_.Add({{"op", op}}, LatencyBucketsSeconds())
         .Observe(std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
     results_.Add({{"op", op}, {"code", std::string(StatusCodeName(s.code()))}}).Increment();
     reactor->Finish(kv::ToGrpc(s));
   };
-  const bool queued = workers_->TrySubmit([ctx, resp, finish, fn = std::forward<Fn>(fn)]() mutable {
-    if (ctx->IsCancelled()) {  // deadline passed while queued: skip the work
-      finish(Status::Cancelled("deadline exceeded before execution"));
-      return;
-    }
-    auto result = fn();
-    const Status status = result.status();
-    if (result.ok()) *resp = std::move(result).value();
-    finish(status);
-  });
+  const bool queued =
+      workers_->TrySubmit([ctx, resp, finish, span, fn = std::forward<Fn>(fn)]() mutable {
+        if (ctx->IsCancelled()) {  // deadline passed while queued: skip the work
+          finish(Status::Cancelled("deadline exceeded before execution"));
+          return;
+        }
+        // KV calls made by fn() become children of this request's span.
+        const tracing::ScopedParent parent(span->TraceParent());
+        auto result = fn();
+        const Status status = result.status();
+        if (result.ok()) *resp = std::move(result).value();
+        finish(status);
+      });
   if (!queued) finish(Status::ResourceExhausted("cart-svc overloaded; retry with backoff"));
   return reactor;
 }

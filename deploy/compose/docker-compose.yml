@@ -20,6 +20,8 @@ x-cluster: &cluster
 x-service: &service
   image: cartwheel:dev
   restart: unless-stopped
+  environment: &service-env
+    CARTWHEEL_TRACING_OTLP_ENDPOINT: jaeger:4317
   stop_grace_period: 10s   # covers drain grace + in-flight RPC deadline
 
 x-deal-infra: &deal-infra
@@ -36,7 +38,7 @@ services:
       dockerfile: deploy/docker/services.Dockerfile
     command: ["wheel-node"]
     environment:
-      <<: *cluster
+      <<: [*cluster, *service-env]
       CARTWHEEL_NODE_ID: wheel-1
       CARTWHEEL_NODE_ADVERTISE: wheel-1:7100
       CARTWHEEL_STORAGE_DIR: /data/wheel-1
@@ -53,7 +55,7 @@ services:
     <<: *service
     command: ["wheel-node"]
     environment:
-      <<: *cluster
+      <<: [*cluster, *service-env]
       CARTWHEEL_NODE_ID: wheel-2
       CARTWHEEL_NODE_ADVERTISE: wheel-2:7100
       CARTWHEEL_STORAGE_DIR: /data/wheel-2
@@ -70,7 +72,7 @@ services:
     <<: *service
     command: ["wheel-node"]
     environment:
-      <<: *cluster
+      <<: [*cluster, *service-env]
       CARTWHEEL_NODE_ID: wheel-3
       CARTWHEEL_NODE_ADVERTISE: wheel-3:7100
       CARTWHEEL_STORAGE_DIR: /data/wheel-3
@@ -87,7 +89,7 @@ services:
     <<: *service
     command: ["wheel-node"]
     environment:
-      <<: *cluster
+      <<: [*cluster, *service-env]
       CARTWHEEL_NODE_ID: wheel-4
       CARTWHEEL_NODE_ADVERTISE: wheel-4:7100
       CARTWHEEL_STORAGE_DIR: /data/wheel-4
@@ -104,7 +106,7 @@ services:
     <<: *service
     command: ["wheel-node"]
     environment:
-      <<: *cluster
+      <<: [*cluster, *service-env]
       CARTWHEEL_NODE_ID: wheel-5
       CARTWHEEL_NODE_ADVERTISE: wheel-5:7100
       CARTWHEEL_STORAGE_DIR: /data/wheel-5
@@ -121,6 +123,7 @@ services:
     <<: *service
     command: ["cart-svc"]
     environment:
+      <<: *service-env
       CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7200
       CARTWHEEL_KV_TARGET: dns:///wheel:7100
       CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9200
@@ -175,7 +178,7 @@ services:
     <<: *service
     command: ["deal-svc"]
     environment:
-      <<: *deal-infra
+      <<: [*deal-infra, *service-env]
       CARTWHEEL_SERVER_LISTEN: 0.0.0.0:7300
       CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9300
     depends_on:
@@ -193,7 +196,7 @@ services:
     <<: *service
     command: ["order-worker"]
     environment:
-      <<: *deal-infra
+      <<: [*deal-infra, *service-env]
       CARTWHEEL_METRICS_LISTEN: 0.0.0.0:9400
     depends_on:
       deal-svc: { condition: service_healthy }
@@ -204,6 +207,7 @@ services:
     <<: *service
     command: ["gateway"]
     environment:
+      <<: *service-env
       CARTWHEEL_SERVER_PORT: "8080"
       CARTWHEEL_CART_TARGET: cart-svc:7200
       CARTWHEEL_DEAL_TARGET: deal-svc:7300
@@ -220,6 +224,32 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/healthz"]
       interval: 2s
       retries: 15
+
+  # ---- observability ------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports: ["16686:16686"]   # traces UI; services export OTLP/gRPC to jaeger:4317
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    volumes:
+      - ../observability/prometheus.compose.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: ["9090:9090"]
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    ports: ["9093:9093"]
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]   # dashboard: /d/cartwheel
 
   web:
     build:

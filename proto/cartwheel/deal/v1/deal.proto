@@ -117,6 +117,9 @@ message OrderPlaced {
   int64 price_cents = 4;
   int64 generation = 5;
   int64 reserved_at_ms = 6;
+  // W3C trace context of the claim that produced this record, so the commit
+  // can be linked to it in a trace.
+  string traceparent = 7;
 }
 
 service DealService {
